@@ -165,6 +165,13 @@ foreign libc {
 	rename    :: proc(old, new: cstring) -> int ---
 	tmpfile   :: proc() -> ^FILE ---
 	tmpnam    :: proc(s: [^]char) -> [^]char ---
+	when ODIN_OS == .Windows{
+		_popen :: proc(command : [^]char,mode : [^]char) -> ^FILE --- 
+	}
+	when ODIN_OS == .Darwin{
+			popen     :: proc(command : [^]char,mode : [^]char) -> ^FILE --- 
+    	pclose    :: proc(stream : ^FILE) ---
+	}
 
 	// 7.21.5 File access functions
 	fclose    :: proc(stream: ^FILE) -> int ---
