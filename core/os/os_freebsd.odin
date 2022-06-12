@@ -123,9 +123,6 @@ O_ASYNC    :: 0x02000
 O_CLOEXEC  :: 0x80000
 
 
-SEEK_SET   :: 0
-SEEK_CUR   :: 1
-SEEK_END   :: 2
 SEEK_DATA  :: 3
 SEEK_HOLE  :: 4
 SEEK_MAX   :: SEEK_HOLE
@@ -621,13 +618,18 @@ heap_free :: proc(ptr: rawptr) {
 	_unix_free(ptr)
 }
 
-getenv :: proc(name: string) -> (string, bool) {
-	path_str := strings.clone_to_cstring(name, context.temp_allocator)
+lookup_env :: proc(key: string, allocator := context.allocator) -> (value: string, found: bool) {
+	path_str := strings.clone_to_cstring(key, context.temp_allocator)
 	cstr := _unix_getenv(path_str)
 	if cstr == nil {
 		return "", false
 	}
-	return string(cstr), true
+	return strings.clone(string(cstr), allocator), true
+}
+
+get_env :: proc(key: string, allocator := context.allocator) -> (value: string) {
+	value, _ = lookup_env(key, allocator)
+	return
 }
 
 get_current_directory :: proc() -> string {

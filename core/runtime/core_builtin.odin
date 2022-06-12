@@ -3,7 +3,7 @@ package runtime
 import "core:intrinsics"
 
 @builtin
-Maybe :: union($T: typeid) #maybe {T}
+Maybe :: union($T: typeid) {T}
 
 
 @builtin
@@ -129,6 +129,9 @@ reserve :: proc{reserve_dynamic_array, reserve_map}
 @builtin
 resize :: proc{resize_dynamic_array}
 
+// Shrinks the capacity of a dynamic array or map down to the current length, or the given capacity.
+@builtin
+shrink :: proc{shrink_dynamic_array, shrink_map}
 
 @builtin
 free :: proc{mem_free}
@@ -284,10 +287,28 @@ clear_map :: proc "contextless" (m: ^$T/map[$K]$V) {
 }
 
 @builtin
-reserve_map :: proc(m: ^$T/map[$K]$V, capacity: int) {
+reserve_map :: proc(m: ^$T/map[$K]$V, capacity: int, loc := #caller_location) {
 	if m != nil {
-		__dynamic_map_reserve(__get_map_header(m), capacity)
+		__dynamic_map_reserve(__get_map_header(m), capacity, loc)
 	}
+}
+
+/*
+	Shrinks the capacity of a map down to the current length, or the given capacity.
+
+	If `new_cap` is negative, then `len(m)` is used.
+
+	Returns false if `cap(m) < new_cap`, or the allocator report failure.
+
+	If `len(m) < new_cap`, then `len(m)` will be left unchanged.
+*/
+@builtin
+shrink_map :: proc(m: ^$T/map[$K]$V, new_cap := -1, loc := #caller_location) -> (did_shrink: bool) {
+	if m != nil {
+		new_cap := new_cap if new_cap >= 0 else len(m)
+		return __dynamic_map_shrink(__get_map_header(m), new_cap, loc)
+	}
+	return
 }
 
 // The delete_key built-in procedure deletes the element with the specified key (m[key]) from the map.
@@ -536,6 +557,54 @@ resize_dynamic_array :: proc(array: ^$T/[dynamic]$E, length: int, loc := #caller
 	return true
 }
 
+/*
+	Shrinks the capacity of a dynamic array down to the current length, or the given capacity.
+
+	If `new_cap` is negative, then `len(array)` is used.
+
+	Returns false if `cap(array) < new_cap`, or the allocator report failure.
+
+	If `len(array) < new_cap`, then `len(array)` will be left unchanged.
+*/
+shrink_dynamic_array :: proc(array: ^$T/[dynamic]$E, new_cap := -1, loc := #caller_location) -> (did_shrink: bool) {
+	if array == nil {
+		return
+	}
+	a := (^Raw_Dynamic_Array)(array)
+
+	new_cap := new_cap if new_cap >= 0 else a.len
+
+	if new_cap > a.cap {
+		return
+	}
+
+	if a.allocator.procedure == nil {
+		a.allocator = context.allocator
+	}
+	assert(a.allocator.procedure != nil)
+
+	old_size := a.cap * size_of(E)
+	new_size := new_cap * size_of(E)
+
+	new_data, err := a.allocator.procedure(
+		a.allocator.data,
+		.Resize,
+		new_size,
+		align_of(E),
+		a.data,
+		old_size,
+		loc,
+	)
+	if err != nil {
+		return
+	}
+
+	a.data = raw_data(new_data)
+	a.len = min(new_cap, a.len)
+	a.cap = new_cap
+	return true
+}
+
 @builtin
 map_insert :: proc(m: ^$T/map[$K]$V, key: K, value: V, loc := #caller_location) -> (ptr: ^V) {
 	key, value := key, value
@@ -600,26 +669,30 @@ card :: proc(s: $S/bit_set[$E; $U]) -> int {
 
 
 @builtin
-raw_array_data :: proc "contextless" (a: $P/^($T/[$N]$E)) -> ^E {
-	return (^E)(a)
+raw_array_data :: proc "contextless" (a: $P/^($T/[$N]$E)) -> [^]E {
+	return ([^]E)(a)
 }
 @builtin
-raw_slice_data :: proc "contextless" (s: $S/[]$E) -> ^E {
+raw_simd_data :: proc "contextless" (a: $P/^($T/#simd[$N]$E)) -> [^]E {
+	return ([^]E)(a)
+}
+@builtin
+raw_slice_data :: proc "contextless" (s: $S/[]$E) -> [^]E {
 	ptr := (transmute(Raw_Slice)s).data
-	return (^E)(ptr)
+	return ([^]E)(ptr)
 }
 @builtin
-raw_dynamic_array_data :: proc "contextless" (s: $S/[dynamic]$E) -> ^E {
+raw_dynamic_array_data :: proc "contextless" (s: $S/[dynamic]$E) -> [^]E {
 	ptr := (transmute(Raw_Dynamic_Array)s).data
-	return (^E)(ptr)
+	return ([^]E)(ptr)
 }
 @builtin
-raw_string_data :: proc "contextless" (s: $S/string) -> ^u8 {
+raw_string_data :: proc "contextless" (s: $S/string) -> [^]u8 {
 	return (transmute(Raw_String)s).data
 }
 
 @builtin
-raw_data :: proc{raw_array_data, raw_slice_data, raw_dynamic_array_data, raw_string_data}
+raw_data :: proc{raw_array_data, raw_slice_data, raw_dynamic_array_data, raw_string_data, raw_simd_data}
 
 
 

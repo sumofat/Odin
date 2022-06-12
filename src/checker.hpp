@@ -60,6 +60,7 @@ struct BuiltinProc {
 	ExprKind kind;
 	BuiltinProcPkg pkg;
 	bool diverging;
+	bool ignore_results; // ignores require results handling
 };
 
 
@@ -118,11 +119,15 @@ struct AttributeContext {
 	bool    init                : 1;
 	bool    set_cold            : 1;
 	u32 optimization_mode; // ProcedureOptimizationMode
+	i64 foreign_import_priority_index;
 
 	String  objc_class;
 	String  objc_name;
 	bool    objc_is_class_method;
 	Type *  objc_type;
+
+	String require_target_feature; // required by the target micro-architecture
+	String enable_target_feature;  // will be enabled for the procedure only
 };
 
 AttributeContext make_attribute_context(String link_prefix) {

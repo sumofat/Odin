@@ -3,11 +3,10 @@ package sys_windows
 
 foreign import kernel32 "system:Kernel32.lib"
 
-
-
 @(default_calling_convention="stdcall")
 foreign kernel32 {
-	OutputDebugStringA :: proc(lpOutputString: LPCSTR) ---
+	OutputDebugStringA :: proc(lpOutputString: LPCSTR) --- // The only A thing that is allowed
+	OutputDebugStringW :: proc(lpOutputString: LPCSTR) ---
 
 	ReadConsoleW :: proc(hConsoleInput: HANDLE,
 	                     lpBuffer: LPVOID,
@@ -23,12 +22,18 @@ foreign kernel32 {
 
 	GetConsoleMode :: proc(hConsoleHandle: HANDLE,
 	                       lpMode: LPDWORD) -> BOOL ---
-
+	SetConsoleMode :: proc(hConsoleHandle: HANDLE,
+	                       dwMode: DWORD) -> BOOL ---
 
 	GetFileInformationByHandle :: proc(hFile: HANDLE, lpFileInformation: LPBY_HANDLE_FILE_INFORMATION) -> BOOL ---
 	SetHandleInformation :: proc(hObject: HANDLE,
 	                             dwMask: DWORD,
 	                             dwFlags: DWORD) -> BOOL ---
+	SetFileInformationByHandle :: proc(hFile:                HANDLE,
+	                                   FileInformationClass: FILE_INFO_BY_HANDLE_CLASS,
+	                                   lpFileInformation:    LPVOID,
+	                                   dwBufferSize:         DWORD) -> BOOL ---
+
 
 	AddVectoredExceptionHandler :: proc(FirstHandler: ULONG, VectoredHandler: PVECTORED_EXCEPTION_HANDLER) -> LPVOID ---
 	AddVectoredContinueHandler  :: proc(FirstHandler: ULONG, VectoredHandler: PVECTORED_EXCEPTION_HANDLER) -> LPVOID ---
@@ -238,6 +243,7 @@ foreign kernel32 {
 		bInitialState: BOOL,
 		lpName: LPCWSTR,
 	) -> HANDLE ---
+	ResetEvent :: proc(hEvent: HANDLE) -> BOOL ---
 	WaitForMultipleObjects :: proc(
 		nCount: DWORD,
 		lpHandles: ^HANDLE,
@@ -265,6 +271,22 @@ foreign kernel32 {
 	HeapAlloc :: proc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID ---
 	HeapReAlloc :: proc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID ---
 	HeapFree :: proc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL ---
+
+	LocalAlloc :: proc(flags: UINT, bytes: SIZE_T) -> LPVOID ---
+	LocalReAlloc :: proc(mem: LPVOID, bytes: SIZE_T, flags: UINT) -> LPVOID ---
+	LocalFree :: proc(mem: LPVOID) -> LPVOID ---
+
+
+	ReadDirectoryChangesW :: proc(
+		hDirectory: HANDLE,
+		lpBuffer: LPVOID,
+		nBufferLength: DWORD,
+		bWatchSubtree: BOOL,
+		dwNotifyFilter: DWORD,
+		lpBytesReturned: LPDWORD,
+		lpOverlapped: LPOVERLAPPED,
+		lpCompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE,
+	) -> BOOL ---
 
 	InitializeSRWLock          :: proc(SRWLock: ^SRWLOCK) ---
 	AcquireSRWLockExclusive    :: proc(SRWLock: ^SRWLOCK) ---
@@ -307,7 +329,6 @@ foreign kernel32 {
 }
 
 
-STANDARD_RIGHTS_REQUIRED     :: DWORD(0x000F0000)
 SECTION_QUERY                :: DWORD(0x0001)
 SECTION_MAP_WRITE            :: DWORD(0x0002)
 SECTION_MAP_READ             :: DWORD(0x0004)
@@ -757,4 +778,19 @@ foreign kernel32 {
 		BaseAddress: PVOID,
 		UnmapFlags: ULONG,
 	) -> BOOL ---
+}
+
+@(default_calling_convention="stdcall")
+foreign kernel32 {
+	@(link_name="SetConsoleCtrlHandler") set_console_ctrl_handler :: proc(handler: Handler_Routine, add: BOOL) -> BOOL ---
+}
+
+Handler_Routine :: proc(dwCtrlType: Control_Event) -> BOOL
+
+Control_Event :: enum DWORD {
+	control_c = 0,
+	_break    = 1,
+	close     = 2,
+	logoff    = 5,
+	shutdown  = 6,
 }

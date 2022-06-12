@@ -62,8 +62,10 @@ import fmt            "core:fmt"
 import hash           "core:hash"
 
 import image          "core:image"
+import netpbm         "core:image/netpbm"
 import png            "core:image/png"
 import qoi            "core:image/qoi"
+import tga            "core:image/tga"
 
 import io             "core:io"
 import log            "core:log"
@@ -94,7 +96,9 @@ import filepath       "core:path/filepath"
 
 import reflect        "core:reflect"
 import runtime        "core:runtime"
+import simd           "core:simd"
 import slice          "core:slice"
+import slice_heap     "core:slice/heap"
 import sort           "core:sort"
 import strconv        "core:strconv"
 import strings        "core:strings"
@@ -164,8 +168,10 @@ _ :: xml
 _ :: fmt
 _ :: hash
 _ :: image
+_ :: netpbm
 _ :: png
 _ :: qoi
+_ :: tga
 _ :: io
 _ :: log
 _ :: math
@@ -188,7 +194,9 @@ _ :: slashpath
 _ :: filepath
 _ :: reflect
 _ :: runtime
+_ :: simd
 _ :: slice
+_ :: slice_heap
 _ :: sort
 _ :: strconv
 _ :: strings
