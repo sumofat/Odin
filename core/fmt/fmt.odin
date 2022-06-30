@@ -1089,9 +1089,9 @@ fmt_enum :: proc(fi: ^Info, v: any, verb: rune) {
 		case: fmt_bad_verb(fi, verb)
 		case 'i', 'd', 'f':
 			fmt_arg(fi, any{v.data, runtime.type_info_base(e.base).id}, verb)
-		case 's', 'v':
+		case 's', 'v', 'q':
 			if str, ok := enum_value_to_string(v); ok {
-				fmt_string(fi, str, 's')
+				fmt_string(fi, str, verb)
 			} else {
 				io.write_string(fi.writer, "%!(BAD ENUM VALUE=", &fi.n)
 				fmt_arg(fi, any{v.data, runtime.type_info_base(e.base).id}, 'i')
@@ -2033,6 +2033,8 @@ fmt_value :: proc(fi: ^Info, v: any, verb: rune) {
 
 		io.write_string(fi.writer, "map[", &fi.n)
 		defer io.write_byte(fi.writer, ']', &fi.n)
+		fi.record_level += 1
+		defer fi.record_level -= 1
 
 		m := (^mem.Raw_Map)(v.data)
 		if m != nil {
