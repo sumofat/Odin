@@ -321,14 +321,14 @@ last_ptr :: proc(array: $T/[]$E) -> ^E {
 }
 
 get :: proc(array: $T/[]$E, index: int) -> (value: E, ok: bool) {
-	if 0 <= index && index < len(array) {
+	if uint(index) < len(array) {
 		value = array[index]
 		ok = true
 	}
 	return
 }
 get_ptr :: proc(array: $T/[]$E, index: int) -> (value: ^E, ok: bool) {
-	if 0 <= index && index < len(array) {
+	if uint(index) < len(array) {
 		value = &array[index]
 		ok = true
 	}
@@ -508,4 +508,11 @@ dot_product :: proc(a, b: $S/[]$T) -> (r: T, ok: bool)
 		r += a[i] * b[i]
 	}
 	return r, true
+}
+
+
+// Convert a pointer to an enumerated array to a slice of the element type
+enumerated_array :: proc(ptr: ^$T) -> []intrinsics.type_elem_type(T)
+	where intrinsics.type_is_enumerated_array(T) {
+	return ([^]intrinsics.type_elem_type(T))(ptr)[:len(T)]
 }
