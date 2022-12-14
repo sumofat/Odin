@@ -123,46 +123,17 @@ backing_type_kind :: proc(T: typeid) -> Type_Kind {
 }
 
 
-type_info_base :: proc(info: ^Type_Info) -> ^Type_Info {
-	if info == nil { return nil }
-
-	base := info
-	loop: for {
-		#partial switch i in base.variant {
-		case Type_Info_Named: base = i.base
-		case: break loop
-		}
-	}
-	return base
-}
-
-
-type_info_core :: proc(info: ^Type_Info) -> ^Type_Info {
-	if info == nil { return nil }
-
-	base := info
-	loop: for {
-		#partial switch i in base.variant {
-		case Type_Info_Named:  base = i.base
-		case Type_Info_Enum:   base = i.base
-		case: break loop
-		}
-	}
-	return base
-}
+type_info_base :: runtime.type_info_base
+type_info_core :: runtime.type_info_core 
 type_info_base_without_enum :: type_info_core
 
 
-typeid_base :: proc(id: typeid) -> typeid {
-	ti := type_info_of(id)
-	ti = type_info_base(ti)
-	return ti.id
+when !ODIN_DISALLOW_RTTI {
+	typeid_base :: runtime.typeid_base
+	typeid_core :: runtime.typeid_core
+	typeid_base_without_enum :: typeid_core
 }
-typeid_core :: proc(id: typeid) -> typeid {
-	ti := type_info_base_without_enum(type_info_of(id))
-	return ti.id
-}
-typeid_base_without_enum :: typeid_core
+
 
 any_base :: proc(v: any) -> any {
 	v := v
@@ -273,7 +244,7 @@ length :: proc(val: any) -> int {
 		return (^runtime.Raw_Dynamic_Array)(val.data).len
 
 	case Type_Info_Map:
-		return (^runtime.Raw_Map)(val.data).entries.len
+		return runtime.map_len((^runtime.Raw_Map)(val.data)^)
 
 	case Type_Info_String:
 		if a.is_cstring {
@@ -305,7 +276,7 @@ capacity :: proc(val: any) -> int {
 		return (^runtime.Raw_Dynamic_Array)(val.data).cap
 
 	case Type_Info_Map:
-		return (^runtime.Raw_Map)(val.data).entries.cap
+		return runtime.map_cap((^runtime.Raw_Map)(val.data)^)
 	}
 	return 0
 }

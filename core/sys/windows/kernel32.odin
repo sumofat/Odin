@@ -120,6 +120,12 @@ foreign kernel32 {
 		bManualReset: BOOL,
 		lpTimerName: LPCWSTR,
 	) -> HANDLE ---
+	CreateWaitableTimerExW :: proc(
+		lpTimerAttributes: LPSECURITY_ATTRIBUTES,
+		lpTimerName: LPCWSTR,
+		dwFlags: DWORD,
+		dwDesiredAccess: DWORD,
+	) -> HANDLE ---
 	SetWaitableTimerEx :: proc(
 		hTimer: HANDLE,
 		lpDueTime: ^LARGE_INTEGER,
@@ -248,6 +254,17 @@ foreign kernel32 {
 	GetModuleHandleW :: proc(lpModuleName: LPCWSTR) -> HMODULE ---
 	GetModuleHandleA :: proc(lpModuleName: LPCSTR) -> HMODULE ---
 	GetSystemTimeAsFileTime :: proc(lpSystemTimeAsFileTime: LPFILETIME) ---
+	GetSystemTimePreciseAsFileTime :: proc(lpSystemTimeAsFileTime: LPFILETIME) ---
+	FileTimeToSystemTime :: proc(lpFileTime: ^FILETIME, lpSystemTime: ^SYSTEMTIME) -> BOOL ---
+	SystemTimeToTzSpecificLocalTime :: proc(
+		lpTimeZoneInformation: ^TIME_ZONE_INFORMATION,
+		lpUniversalTime: ^SYSTEMTIME,
+		lpLocalTime: ^SYSTEMTIME,
+	) -> BOOL ---
+	SystemTimeToFileTime :: proc(
+		lpSystemTime: ^SYSTEMTIME,
+		lpFileTime: LPFILETIME,
+	) -> BOOL ---
 	CreateEventW :: proc(
 		lpEventAttributes: LPSECURITY_ATTRIBUTES,
 		bManualReset: BOOL,
@@ -346,6 +363,13 @@ foreign kernel32 {
 	GenerateConsoleCtrlEvent :: proc(dwCtrlEvent: DWORD, dwProcessGroupId: DWORD) -> BOOL ---
 	FreeConsole :: proc() -> BOOL ---
 	GetConsoleWindow :: proc() -> HWND ---
+
+	GetDiskFreeSpaceExW :: proc(
+		lpDirectoryName: LPCWSTR,
+		lpFreeBytesAvailableToCaller: PULARGE_INTEGER,
+		lpTotalNumberOfBytes: PULARGE_INTEGER,
+		lpTotalNumberOfFreeBytes: PULARGE_INTEGER,
+	) -> BOOL ---
 }
 
 
@@ -963,4 +987,15 @@ DCB :: struct {
 foreign kernel32 {
 	GetCommState :: proc(handle: HANDLE, dcb: ^DCB) -> BOOL ---
 	SetCommState :: proc(handle: HANDLE, dcb: ^DCB) -> BOOL ---
+}
+
+
+LPFIBER_START_ROUTINE :: #type proc "stdcall" (lpFiberParameter: LPVOID)
+
+@(default_calling_convention = "stdcall")
+foreign kernel32 {
+	CreateFiber :: proc(dwStackSize: SIZE_T, lpStartAddress: LPFIBER_START_ROUTINE, lpParameter: LPVOID) -> LPVOID ---
+	DeleteFiber :: proc(lpFiber: LPVOID) ---
+	ConvertThreadToFiber :: proc(lpParameter: LPVOID) -> LPVOID ---
+	SwitchToFiber :: proc(lpFiber: LPVOID) ---
 }

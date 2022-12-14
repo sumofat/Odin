@@ -144,6 +144,8 @@ struct lbModule {
 
 	PtrMap<Type *, lbProcedure *> equal_procs;
 	PtrMap<Type *, lbProcedure *> hasher_procs;
+	PtrMap<Type *, lbProcedure *> map_get_procs;
+	PtrMap<Type *, lbProcedure *> map_set_procs;
 
 	u32 nested_type_name_guid;
 
@@ -160,7 +162,8 @@ struct lbModule {
 	StringMap<lbAddr> objc_classes;
 	StringMap<lbAddr> objc_selectors;
 
-	PtrMap<Type *, lbAddr> map_header_table_map;
+	PtrMap<Type *, lbAddr> map_cell_info_map; // address of runtime.Map_Info
+	PtrMap<Type *, lbAddr> map_info_map;      // address of runtime.Map_Cell_Info
 };
 
 struct lbGenerator {
@@ -251,15 +254,13 @@ struct lbTargetList {
 };
 
 
+struct lbTupleFix {
+	Slice<lbValue> values;
+};
+
 enum lbProcedureFlag : u32 {
 	lbProcedureFlag_WithoutMemcpyPass = 1<<0,
 	lbProcedureFlag_DebugAllocaCopy = 1<<1,
-};
-
-struct lbCopyElisionHint {
-	lbValue ptr;
-	Ast *   ast;
-	bool    used;
 };
 
 struct lbProcedure {
@@ -298,6 +299,7 @@ struct lbProcedure {
 	lbBlock *        entry_block;
 	lbBlock *        curr_block;
 	lbTargetList *   target_list;
+	PtrMap<Entity *, lbValue> direct_parameters;
 
 	Ast *curr_stmt;
 
@@ -306,10 +308,9 @@ struct lbProcedure {
 
 	LLVMMetadataRef debug_info;
 
-	lbCopyElisionHint copy_elision_hint;
-
 	PtrMap<Ast *, lbValue> selector_values;
 	PtrMap<Ast *, lbAddr>  selector_addr;
+	PtrMap<LLVMValueRef, lbTupleFix> tuple_fix_map;
 };
 
 
@@ -364,6 +365,7 @@ lbValue lb_emit_epi(lbModule *m, lbValue const &value, isize index);
 lbValue lb_emit_array_epi(lbModule *m, lbValue s, isize index);
 lbValue lb_emit_struct_ep(lbProcedure *p, lbValue s, i32 index);
 lbValue lb_emit_struct_ev(lbProcedure *p, lbValue s, i32 index);
+lbValue lb_emit_tuple_ev(lbProcedure *p, lbValue value, i32 index);
 lbValue lb_emit_array_epi(lbProcedure *p, lbValue value, isize index);
 lbValue lb_emit_array_ep(lbProcedure *p, lbValue s, lbValue index);
 lbValue lb_emit_deep_field_gep(lbProcedure *p, lbValue e, Selection sel);
@@ -379,7 +381,7 @@ lbValue lb_emit_byte_swap(lbProcedure *p, lbValue value, Type *end_type);
 void lb_emit_defer_stmts(lbProcedure *p, lbDeferExitKind kind, lbBlock *block);
 lbValue lb_emit_transmute(lbProcedure *p, lbValue value, Type *t);
 lbValue lb_emit_comp(lbProcedure *p, TokenKind op_kind, lbValue left, lbValue right);
-lbValue lb_emit_call(lbProcedure *p, lbValue value, Array<lbValue> const &args, ProcInlining inlining = ProcInlining_none, bool use_return_ptr_hint = false);
+lbValue lb_emit_call(lbProcedure *p, lbValue value, Array<lbValue> const &args, ProcInlining inlining = ProcInlining_none);
 lbValue lb_emit_conv(lbProcedure *p, lbValue value, Type *t);
 lbValue lb_emit_comp_against_nil(lbProcedure *p, TokenKind op_kind, lbValue x);
 
@@ -396,7 +398,7 @@ lbContextData *lb_push_context_onto_stack_from_implicit_parameter(lbProcedure *p
 
 
 lbAddr lb_add_global_generated(lbModule *m, Type *type, lbValue value={}, Entity **entity_=nullptr);
-lbAddr lb_add_local(lbProcedure *p, Type *type, Entity *e=nullptr, bool zero_init=true, i32 param_index=0, bool force_no_init=false);
+lbAddr lb_add_local(lbProcedure *p, Type *type, Entity *e=nullptr, bool zero_init=true, bool force_no_init=false);
 
 void lb_add_foreign_library_path(lbModule *m, Entity *e);
 
@@ -421,8 +423,6 @@ lbValue lb_dynamic_array_elem(lbProcedure *p, lbValue da);
 lbValue lb_dynamic_array_len(lbProcedure *p, lbValue da);
 lbValue lb_dynamic_array_cap(lbProcedure *p, lbValue da);
 lbValue lb_dynamic_array_allocator(lbProcedure *p, lbValue da);
-lbValue lb_map_entries(lbProcedure *p, lbValue value);
-lbValue lb_map_entries_ptr(lbProcedure *p, lbValue value);
 lbValue lb_map_len(lbProcedure *p, lbValue value);
 lbValue lb_map_cap(lbProcedure *p, lbValue value);
 lbValue lb_soa_struct_len(lbProcedure *p, lbValue value);
@@ -446,22 +446,24 @@ String lb_get_const_string(lbModule *m, lbValue value);
 lbValue lb_generate_local_array(lbProcedure *p, Type *elem_type, i64 count, bool zero_init=true);
 lbValue lb_generate_global_array(lbModule *m, Type *elem_type, i64 count, String prefix, i64 id);
 lbValue lb_gen_map_key_hash(lbProcedure *p, lbValue key, Type *key_type, lbValue *key_ptr_);
+lbValue lb_gen_map_cell_info_ptr(lbModule *m, Type *type);
+lbValue lb_gen_map_info_ptr(lbModule *m, Type *map_type);
 
 lbValue lb_internal_dynamic_map_get_ptr(lbProcedure *p, lbValue const &map_ptr, lbValue const &key);
-void    lb_insert_dynamic_map_key_and_value(lbProcedure *p, lbValue const &map_ptr, Type *map_type, lbValue const &map_key, lbValue const &map_value, Ast *node);
-void    lb_dynamic_map_reserve(lbProcedure *p, lbValue const &map_ptr, isize const capacity, TokenPos const &pos);
+void    lb_internal_dynamic_map_set(lbProcedure *p, lbValue const &map_ptr, Type *map_type, lbValue const &map_key, lbValue const &map_value, Ast *node);
+lbValue lb_dynamic_map_reserve(lbProcedure *p, lbValue const &map_ptr, isize const capacity, TokenPos const &pos);
 
 lbValue lb_find_procedure_value_from_entity(lbModule *m, Entity *e);
 lbValue lb_find_value_from_entity(lbModule *m, Entity *e);
 
 void lb_store_type_case_implicit(lbProcedure *p, Ast *clause, lbValue value);
 lbAddr lb_store_range_stmt_val(lbProcedure *p, Ast *stmt_val, lbValue value);
-lbValue lb_emit_source_code_location(lbProcedure *p, String const &procedure, TokenPos const &pos);
+lbValue lb_emit_source_code_location_const(lbProcedure *p, String const &procedure, TokenPos const &pos);
 
 lbValue lb_handle_param_value(lbProcedure *p, Type *parameter_type, ParameterValue const &param_value, TokenPos const &pos);
 
-lbValue lb_get_equal_proc_for_type(lbModule *m, Type *type);
-lbValue lb_get_hasher_proc_for_type(lbModule *m, Type *type);
+lbValue lb_equal_proc_for_type(lbModule *m, Type *type);
+lbValue lb_hasher_proc_for_type(lbModule *m, Type *type);
 lbValue lb_emit_conv(lbProcedure *p, lbValue value, Type *t);
 
 LLVMMetadataRef lb_debug_type(lbModule *m, Type *type);
@@ -492,10 +494,6 @@ LLVMValueRef llvm_alloca(lbProcedure *p, LLVMTypeRef llvm_type, isize alignment,
 void lb_mem_zero_ptr(lbProcedure *p, LLVMValueRef ptr, Type *type, unsigned alignment);
 
 void lb_emit_init_context(lbProcedure *p, lbAddr addr);
-
-lbCopyElisionHint lb_set_copy_elision_hint(lbProcedure *p, lbAddr const &addr, Ast *ast);
-void lb_reset_copy_elision_hint(lbProcedure *p, lbCopyElisionHint prev_hint);
-lbValue lb_consume_copy_elision_hint(lbProcedure *p);
 
 
 lbStructFieldRemapping lb_get_struct_remapping(lbModule *m, Type *t);

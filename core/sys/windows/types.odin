@@ -20,6 +20,7 @@ DWORD :: c_ulong
 DWORDLONG :: c.ulonglong
 QWORD :: c.ulonglong
 HANDLE :: distinct LPVOID
+PHANDLE :: ^HANDLE
 HINSTANCE :: HANDLE
 HMODULE :: distinct HINSTANCE
 HRESULT :: distinct LONG
@@ -43,6 +44,7 @@ BOOLEAN :: distinct b8
 GROUP :: distinct c_uint
 LARGE_INTEGER :: distinct c_longlong
 ULARGE_INTEGER :: distinct c_ulonglong
+PULARGE_INTEGER :: ^ULARGE_INTEGER
 LONG :: c_long
 UINT :: c_uint
 INT  :: c_int
@@ -133,11 +135,23 @@ LPWSAOVERLAPPED :: distinct rawptr
 LPWSAOVERLAPPED_COMPLETION_ROUTINE :: distinct rawptr
 LPCVOID :: rawptr
 
+PACCESS_TOKEN :: PVOID
+PSECURITY_DESCRIPTOR :: PVOID
+PSID :: PVOID
+PCLAIMS_BLOB :: PVOID
+
 PCONDITION_VARIABLE :: ^CONDITION_VARIABLE
 PLARGE_INTEGER :: ^LARGE_INTEGER
 PSRWLOCK :: ^SRWLOCK
 
 MMRESULT :: UINT
+
+CREATE_WAITABLE_TIMER_MANUAL_RESET    :: 0x00000001
+CREATE_WAITABLE_TIMER_HIGH_RESOLUTION :: 0x00000002
+
+TIMER_QUERY_STATE  :: 0x0001
+TIMER_MODIFY_STATE :: 0x0002
+TIMER_ALL_ACCESS   :: STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | TIMER_QUERY_STATE | TIMER_MODIFY_STATE
 
 SOCKET :: distinct uintptr // TODO
 socklen_t :: c_int
@@ -175,6 +189,7 @@ FILE_SHARE_DELETE: DWORD : 0x00000004
 FILE_GENERIC_ALL: DWORD : 0x10000000
 FILE_GENERIC_EXECUTE: DWORD : 0x20000000
 FILE_GENERIC_READ: DWORD : 0x80000000
+FILE_ALL_ACCESS :: STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x1FF
 
 FILE_ACTION_ADDED            :: 0x00000001
 FILE_ACTION_REMOVED          :: 0x00000002
@@ -230,6 +245,20 @@ SECURITY_SQOS_PRESENT: DWORD : 0x00100000
 
 FIONBIO: c_ulong : 0x8004667e
 
+OWNER_SECURITY_INFORMATION               :: 0x00000001
+GROUP_SECURITY_INFORMATION               :: 0x00000002
+DACL_SECURITY_INFORMATION                :: 0x00000004
+SACL_SECURITY_INFORMATION                :: 0x00000008
+LABEL_SECURITY_INFORMATION               :: 0x00000010
+ATTRIBUTE_SECURITY_INFORMATION           :: 0x00000020
+SCOPE_SECURITY_INFORMATION               :: 0x00000040
+PROCESS_TRUST_LABEL_SECURITY_INFORMATION :: 0x00000080
+ACCESS_FILTER_SECURITY_INFORMATION       :: 0x00000100
+BACKUP_SECURITY_INFORMATION              :: 0x00010000
+PROTECTED_DACL_SECURITY_INFORMATION      :: 0x80000000
+PROTECTED_SACL_SECURITY_INFORMATION      :: 0x40000000
+UNPROTECTED_DACL_SECURITY_INFORMATION    :: 0x20000000
+UNPROTECTED_SACL_SECURITY_INFORMATION    :: 0x10000000
 
 GET_FILEEX_INFO_LEVELS :: distinct i32
 GetFileExInfoStandard: GET_FILEEX_INFO_LEVELS : 0
@@ -773,6 +802,61 @@ MSG :: struct {
 
 LPMSG :: ^MSG
 
+// WM_NCHITTEST and MOUSEHOOKSTRUCT Mouse Position Codes
+HTERROR       :: -2
+HTTRANSPARENT :: -1
+HTNOWHERE     :: 0
+HTCLIENT      :: 1
+HTCAPTION     :: 2
+HTSYSMENU     :: 3
+HTGROWBOX     :: 4
+HTSIZE        :: HTGROWBOX
+HTMENU        :: 5
+HTHSCROLL     :: 6
+HTVSCROLL     :: 7
+HTMINBUTTON   :: 8
+HTMAXBUTTON   :: 9
+HTLEFT        :: 10
+HTRIGHT       :: 11
+HTTOP         :: 12
+HTTOPLEFT     :: 13
+HTTOPRIGHT    :: 14
+HTBOTTOM      :: 15
+HTBOTTOMLEFT  :: 16
+HTBOTTOMRIGHT :: 17
+HTBORDER      :: 18
+HTREDUCE      :: HTMINBUTTON
+HTZOOM        :: HTMAXBUTTON
+HTSIZEFIRST   :: HTLEFT
+HTSIZELAST    :: HTBOTTOMRIGHT
+HTOBJECT      :: 19
+HTCLOSE       :: 20
+HTHELP        :: 21
+
+TEXTMETRICW :: struct {
+	tmHeight: LONG,
+	tmAscent: LONG,
+	tmDescent: LONG,
+	tmInternalLeading: LONG,
+	tmExternalLeading: LONG,
+	tmAveCharWidth: LONG,
+	tmMaxCharWidth: LONG,
+	tmWeight: LONG,
+	tmOverhang: LONG,
+	tmDigitizedAspectX: LONG,
+	tmDigitizedAspectY: LONG,
+	tmFirstChar: WCHAR,
+	tmLastChar: WCHAR,
+	tmDefaultChar: WCHAR,
+	tmBreakChar: WCHAR,
+	tmItalic: BYTE,
+	tmUnderlined: BYTE,
+	tmStruckOut: BYTE,
+	tmPitchAndFamily: BYTE,
+	tmCharSet: BYTE,
+}
+LPTEXTMETRICW :: ^TEXTMETRICW
+
 PAINTSTRUCT :: struct {
 	hdc: HDC,
 	fErase: BOOL,
@@ -878,6 +962,48 @@ NM_THEMECHANGED         :: NM_OUTOFMEMORY-21
 NM_FONTCHANGED          :: NM_OUTOFMEMORY-22
 NM_CUSTOMTEXT           :: NM_OUTOFMEMORY-23 // uses NMCUSTOMTEXT struct
 NM_TVSTATEIMAGECHANGING :: NM_OUTOFMEMORY-23 // uses NMTVSTATEIMAGECHANGING struct, defined after HTREEITEM
+
+PCZZWSTR :: ^WCHAR
+
+SHFILEOPSTRUCTW :: struct {
+	hwnd: HWND,
+	wFunc: UINT,
+	pFrom: PCZZWSTR,
+	pTo: PCZZWSTR,
+	fFlags: FILEOP_FLAGS,
+	fAnyOperationsAborted: BOOL,
+	hNameMappings: LPVOID,
+	lpszProgressTitle: PCWSTR, // only used if FOF_SIMPLEPROGRESS
+}
+LPSHFILEOPSTRUCTW :: ^SHFILEOPSTRUCTW
+
+// Shell File Operations
+FO_MOVE   :: 0x0001
+FO_COPY   :: 0x0002
+FO_DELETE :: 0x0003
+FO_RENAME :: 0x0004
+
+// SHFILEOPSTRUCT.fFlags and IFileOperation::SetOperationFlags() flag values
+FOF_MULTIDESTFILES        :: 0x0001
+FOF_CONFIRMMOUSE          :: 0x0002
+FOF_SILENT                :: 0x0004  // don't display progress UI (confirm prompts may be displayed still)
+FOF_RENAMEONCOLLISION     :: 0x0008  // automatically rename the source files to avoid the collisions
+FOF_NOCONFIRMATION        :: 0x0010  // don't display confirmation UI, assume "yes" for cases that can be bypassed, "no" for those that can not
+FOF_WANTMAPPINGHANDLE     :: 0x0020  // Fill in SHFILEOPSTRUCT.hNameMappings
+                                     // Must be freed using SHFreeNameMappings
+FOF_ALLOWUNDO             :: 0x0040  // enable undo including Recycle behavior for IFileOperation::Delete()
+FOF_FILESONLY             :: 0x0080  // only operate on the files (non folders), both files and folders are assumed without this
+FOF_SIMPLEPROGRESS        :: 0x0100  // means don't show names of files
+FOF_NOCONFIRMMKDIR        :: 0x0200  // don't dispplay confirmatino UI before making any needed directories, assume "Yes" in these cases
+FOF_NOERRORUI             :: 0x0400  // don't put up error UI, other UI may be displayed, progress, confirmations
+FOF_NOCOPYSECURITYATTRIBS :: 0x0800  // dont copy file security attributes (ACLs)
+FOF_NORECURSION           :: 0x1000  // don't recurse into directories for operations that would recurse
+FOF_NO_CONNECTED_ELEMENTS :: 0x2000  // don't operate on connected elements ("xxx_files" folders that go with .htm files)
+FOF_WANTNUKEWARNING       :: 0x4000  // during delete operation, warn if object is being permanently destroyed instead of recycling (partially overrides FOF_NOCONFIRMATION)
+FOF_NORECURSEREPARSE      :: 0x8000  // deprecated; the operations engine always does the right thing on FolderLink objects (symlinks, reparse points, folder shortcuts)
+FOF_NO_UI                 :: (FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR) // don't display any UI at all
+
+FILEOP_FLAGS :: WORD
 
 DEVMODEW :: struct {
 	dmDeviceName:   [32]wchar_t,
@@ -1066,8 +1192,14 @@ WS_EX_TOPMOST               : UINT : 0x0000_0008
 WS_EX_TRANSPARENT           : UINT : 0x0000_0020
 WS_EX_WINDOWEDGE            : UINT : 0x0000_0100
 
-PBS_SMOOTH   :: 0x01
-PBS_VERTICAL :: 0x04
+PBS_SMOOTH        :: 0x01
+PBS_VERTICAL      :: 0x04
+PBS_MARQUEE       :: 0x08
+PBS_SMOOTHREVERSE :: 0x10
+
+PBST_NORMAL :: 0x0001
+PBST_ERROR  :: 0x0002
+PBST_PAUSED :: 0x0003
 
 QS_ALLEVENTS      : UINT : QS_INPUT | QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_HOTKEY
 QS_ALLINPUT       : UINT : QS_INPUT | QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_HOTKEY | QS_SENDMESSAGE
@@ -1126,6 +1258,10 @@ SWP_NOREPOSITION :: SWP_NOOWNERZORDER
 
 SWP_DEFERERASE     :: 0x2000 // same as SWP_DEFERDRAWING
 SWP_ASYNCWINDOWPOS :: 0x4000 // same as SWP_CREATESPB
+
+CSIDL_APPDATA        :: 0x001a // <user name>\Application Data
+CSIDL_COMMON_APPDATA :: 0x0023 // All Users\Application Data
+CSIDL_PROFILE 		 :: 0x0028 // <user name>\
 
 HWND_TOP       :: HWND( uintptr(0))     //  0
 HWND_BOTTOM    :: HWND( uintptr(1))     //  1
@@ -1325,6 +1461,58 @@ WMSZ_BOTTOM      :: 6
 WMSZ_BOTTOMLEFT  :: 7
 WMSZ_BOTTOMRIGHT :: 8
 
+// Note CLASSKEY overrides CLASSNAME
+SEE_MASK_DEFAULT   :: 0x00000000
+SEE_MASK_CLASSNAME :: 0x00000001   // SHELLEXECUTEINFO.lpClass is valid
+SEE_MASK_CLASSKEY  :: 0x00000003   // SHELLEXECUTEINFO.hkeyClass is valid
+// Note SEE_MASK_INVOKEIDLIST(0xC) implies SEE_MASK_IDLIST(0x04)
+SEE_MASK_IDLIST            :: 0x00000004   // SHELLEXECUTEINFO.lpIDList is valid
+SEE_MASK_INVOKEIDLIST      :: 0x0000000c   // enable IContextMenu based verbs
+SEE_MASK_ICON              :: 0x00000010   // not used
+SEE_MASK_HOTKEY            :: 0x00000020   // SHELLEXECUTEINFO.dwHotKey is valid
+SEE_MASK_NOCLOSEPROCESS    :: 0x00000040   // SHELLEXECUTEINFO.hProcess
+SEE_MASK_CONNECTNETDRV     :: 0x00000080   // enables re-connecting disconnected network drives
+SEE_MASK_NOASYNC           :: 0x00000100   // block on the call until the invoke has completed, use for callers that exit after calling ShellExecuteEx()
+SEE_MASK_FLAG_DDEWAIT      :: SEE_MASK_NOASYNC // Use SEE_MASK_NOASYNC instead of SEE_MASK_FLAG_DDEWAIT as it more accuratly describes the behavior
+SEE_MASK_DOENVSUBST        :: 0x00000200   // indicates that SHELLEXECUTEINFO.lpFile contains env vars that should be expanded
+SEE_MASK_FLAG_NO_UI        :: 0x00000400   // disable UI including error messages
+SEE_MASK_UNICODE           :: 0x00004000
+SEE_MASK_NO_CONSOLE        :: 0x00008000
+SEE_MASK_ASYNCOK           :: 0x00100000
+SEE_MASK_HMONITOR          :: 0x00200000   // SHELLEXECUTEINFO.hMonitor
+SEE_MASK_NOZONECHECKS      :: 0x00800000
+SEE_MASK_NOQUERYCLASSSTORE :: 0x01000000
+SEE_MASK_WAITFORINPUTIDLE  :: 0x02000000
+SEE_MASK_FLAG_LOG_USAGE    :: 0x04000000
+
+// When SEE_MASK_FLAG_HINST_IS_SITE is specified SHELLEXECUTEINFO.hInstApp is used as an
+// _In_ parameter and specifies a IUnknown* to be used as a site pointer. The site pointer
+// is used to provide services to shell execute, the handler binding process and the verb handlers
+// once they are invoked.
+SEE_MASK_FLAG_HINST_IS_SITE :: 0x08000000
+
+SHELLEXECUTEINFOW :: struct {
+	cbSize: DWORD,               // in, required, sizeof of this structure
+	fMask: ULONG,                // in, SEE_MASK_XXX values
+	hwnd: HWND,                  // in, optional
+	lpVerb: LPCWSTR,            // in, optional when unspecified the default verb is choosen
+	lpFile: LPCWSTR,            // in, either this value or lpIDList must be specified
+	lpParameters: LPCWSTR,      // in, optional
+	lpDirectory: LPCWSTR,       // in, optional
+	nShow: c.int,                  // in, required
+	hInstApp: HINSTANCE,         // out when SEE_MASK_NOCLOSEPROCESS is specified
+	lpIDList: rawptr,             // in, valid when SEE_MASK_IDLIST is specified, PCIDLIST_ABSOLUTE, for use with SEE_MASK_IDLIST & SEE_MASK_INVOKEIDLIST
+	lpClass: LPCWSTR,           // in, valid when SEE_MASK_CLASSNAME is specified
+	hkeyClass: HKEY,             // in, valid when SEE_MASK_CLASSKEY is specified
+	dwHotKey: DWORD,             // in, valid when SEE_MASK_HOTKEY is specified
+	DUMMYUNIONNAME: struct #raw_union {
+		hIcon: HANDLE,           // not used
+		hMonitor: HANDLE,        // in, valid when SEE_MASK_HMONITOR specified
+	},
+	hProcess: HANDLE,            // out, valid when SEE_MASK_NOCLOSEPROCESS specified
+}
+LPSHELLEXECUTEINFOW :: ^SHELLEXECUTEINFOW
+
 // Key State Masks for Mouse Messages
 MK_LBUTTON  :: 0x0001
 MK_RBUTTON  :: 0x0002
@@ -1365,6 +1553,25 @@ USER_TIMER_MINIMUM :: 0x0000000A
 WA_INACTIVE    :: 0
 WA_ACTIVE      :: 1
 WA_CLICKACTIVE :: 2
+
+// Struct pointed to by WM_GETMINMAXINFO lParam
+MINMAXINFO :: struct {
+	ptReserved: POINT,
+	ptMaxSize: POINT,
+	ptMaxPosition: POINT,
+	ptMinTrackSize: POINT,
+	ptMaxTrackSize: POINT,
+}
+PMINMAXINFO  :: ^MINMAXINFO
+LPMINMAXINFO :: PMINMAXINFO
+
+MONITORINFO :: struct {
+	cbSize: DWORD,
+	rcMonitor: RECT,
+	rcWork: RECT,
+	dwFlags: DWORD,
+}
+LPMONITORINFO :: ^MONITORINFO
 
 // SetWindowsHook() codes
 WH_MIN             :: -1
@@ -1462,6 +1669,24 @@ IDI_WARNING      := IDI_EXCLAMATION
 IDI_ERROR        := IDI_HAND
 IDI_INFORMATION  := IDI_ASTERISK
 
+IMAGE_BITMAP      :: 0
+IMAGE_ICON        :: 1
+IMAGE_CURSOR      :: 2
+IMAGE_ENHMETAFILE :: 3
+
+LR_DEFAULTCOLOR     :: 0x00000000
+LR_MONOCHROME       :: 0x00000001
+LR_COLOR            :: 0x00000002
+LR_COPYRETURNORG    :: 0x00000004
+LR_COPYDELETEORG    :: 0x00000008
+LR_LOADFROMFILE     :: 0x00000010
+LR_LOADTRANSPARENT  :: 0x00000020
+LR_DEFAULTSIZE      :: 0x00000040
+LR_VGACOLOR         :: 0x00000080
+LR_LOADMAP3DCOLORS  :: 0x00001000
+LR_CREATEDIBSECTION :: 0x00002000
+LR_COPYFROMRESOURCE :: 0x00004000
+LR_SHARED           :: 0x00008000
 
 // DIB color table identifiers
 DIB_RGB_COLORS :: 0
@@ -1774,12 +1999,15 @@ WAIT_FAILED: DWORD : 0xFFFFFFFF
 
 PIPE_ACCESS_INBOUND: DWORD : 0x00000001
 PIPE_ACCESS_OUTBOUND: DWORD : 0x00000002
+PIPE_ACCESS_DUPLEX: DWORD : 0x00000003
 FILE_FLAG_FIRST_PIPE_INSTANCE: DWORD : 0x00080000
 FILE_FLAG_OVERLAPPED: DWORD : 0x40000000
 PIPE_WAIT: DWORD : 0x00000000
 PIPE_TYPE_BYTE: DWORD : 0x00000000
+PIPE_TYPE_MESSAGE: DWORD : 0x00000004
 PIPE_REJECT_REMOTE_CLIENTS: DWORD : 0x00000008
 PIPE_READMODE_BYTE: DWORD : 0x00000000
+PIPE_READMODE_MESSAGE: DWORD : 0x00000002
 PIPE_ACCEPT_REMOTE_CLIENTS: DWORD : 0x00000000
 
 FD_SETSIZE :: 64
@@ -1793,7 +2021,58 @@ HEAP_ZERO_MEMORY: DWORD : 0x00000008
 HANDLE_FLAG_INHERIT: DWORD : 0x00000001
 HANDLE_FLAG_PROTECT_FROM_CLOSE :: 0x00000002
 
-TOKEN_READ: DWORD : 0x20008
+GENERIC_MAPPING :: struct {
+	GenericRead: ACCESS_MASK,
+	GenericWrite: ACCESS_MASK,
+	GenericExecute: ACCESS_MASK,
+	GenericAll: ACCESS_MASK,
+}
+PGENERIC_MAPPING :: ^GENERIC_MAPPING
+
+SECURITY_IMPERSONATION_LEVEL :: enum {
+	SecurityAnonymous,
+	SecurityIdentification,
+	SecurityImpersonation,
+	SecurityDelegation,
+}
+
+SECURITY_INFORMATION :: DWORD
+ANYSIZE_ARRAY :: 1
+
+LUID_AND_ATTRIBUTES :: struct {
+	Luid: LUID,
+	Attributes: DWORD,
+}
+
+PRIVILEGE_SET :: struct {
+	PrivilegeCount: DWORD,
+	Control: DWORD,
+	Privilege: [ANYSIZE_ARRAY]LUID_AND_ATTRIBUTES,
+}
+PPRIVILEGE_SET :: ^PRIVILEGE_SET
+
+// Token Specific Access Rights.
+TOKEN_ASSIGN_PRIMARY    :: 0x0001
+TOKEN_DUPLICATE         :: 0x0002
+TOKEN_IMPERSONATE       :: 0x0004
+TOKEN_QUERY             :: 0x0008
+TOKEN_QUERY_SOURCE      :: 0x0010
+TOKEN_ADJUST_PRIVILEGES :: 0x0020
+TOKEN_ADJUST_GROUPS     :: 0x0040
+TOKEN_ADJUST_DEFAULT    :: 0x0080
+TOKEN_ADJUST_SESSIONID  :: 0x0100
+
+TOKEN_ALL_ACCESS_P :: STANDARD_RIGHTS_REQUIRED | TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE | TOKEN_QUERY |\
+	TOKEN_QUERY_SOURCE | TOKEN_ADJUST_PRIVILEGES | TOKEN_ADJUST_GROUPS | TOKEN_ADJUST_DEFAULT
+
+TOKEN_ALL_ACCESS                :: TOKEN_ALL_ACCESS_P | TOKEN_ADJUST_SESSIONID
+TOKEN_READ                      :: STANDARD_RIGHTS_READ | TOKEN_QUERY
+TOKEN_WRITE                     :: STANDARD_RIGHTS_WRITE | TOKEN_ADJUST_PRIVILEGES | TOKEN_ADJUST_GROUPS | TOKEN_ADJUST_DEFAULT
+TOKEN_EXECUTE                   :: STANDARD_RIGHTS_EXECUTE
+TOKEN_TRUST_CONSTRAINT_MASK     :: STANDARD_RIGHTS_READ | TOKEN_QUERY | TOKEN_QUERY_SOURCE
+TOKEN_ACCESS_PSEUDO_HANDLE_WIN8 :: TOKEN_QUERY | TOKEN_QUERY_SOURCE
+TOKEN_ACCESS_PSEUDO_HANDLE      :: TOKEN_ACCESS_PSEUDO_HANDLE_WIN8
+
 
 CP_ACP        :: 0     // default to ANSI code page
 CP_OEMCP      :: 1     // default to OEM  code page
@@ -2111,8 +2390,9 @@ FILETIME :: struct {
 
 FILETIME_as_unix_nanoseconds :: proc "contextless" (ft: FILETIME) -> i64 {
 	t := i64(u64(ft.dwLowDateTime) | u64(ft.dwHighDateTime) << 32)
-	return (t - 0x019db1ded53e8000) * 100
+	return (t - 116444736000000000) * 100
 }
+
 
 OVERLAPPED :: struct {
 	Internal: ^c_ulong,
@@ -2787,6 +3067,16 @@ SYSTEMTIME :: struct {
 	milliseconds: WORD,
 }
 
+TIME_ZONE_INFORMATION :: struct {
+	Bias:         LONG,
+	StandardName: [32]WCHAR,
+	StandardDate: SYSTEMTIME,
+	StandardBias: LONG,
+	DaylightName: [32]WCHAR,
+	DaylightDate: SYSTEMTIME,
+	DaylightBias: LONG,
+}
+
 
 @(private="file")
 IMAGE_DOS_HEADER :: struct {
@@ -3058,12 +3348,32 @@ SHCONTF_FLATLIST              :: 0x4000
 SHCONTF_ENABLE_ASYNC          :: 0x8000
 SHCONTF_INCLUDESUPERHIDDEN    :: 0x10000
 
+SHACF_DEFAULT               :: 0x00000000  // Currently (SHACF_FILESYSTEM | SHACF_URLALL)
+SHACF_FILESYSTEM            :: 0x00000001  // This includes the File System as well as the rest of the shell (Desktop\My Computer\Control Panel\)
+SHACF_URLALL                :: (SHACF_URLHISTORY | SHACF_URLMRU)
+SHACF_URLHISTORY            :: 0x00000002  // URLs in the User's History
+SHACF_URLMRU                :: 0x00000004  // URLs in the User's Recently Used list.
+SHACF_USETAB                :: 0x00000008  // Use the tab to move thru the autocomplete possibilities instead of to the next dialog/window control.
+SHACF_FILESYS_ONLY          :: 0x00000010  // This includes the File System
+SHACF_FILESYS_DIRS          :: 0x00000020  // Same as SHACF_FILESYS_ONLY except it only includes directories, UNC servers, and UNC server shares.
+SHACF_VIRTUAL_NAMESPACE     :: 0x00000040  // Also include the virtual namespace
+SHACF_AUTOSUGGEST_FORCE_ON  :: 0x10000000  // Ignore the registry default and force the feature on.
+SHACF_AUTOSUGGEST_FORCE_OFF :: 0x20000000  // Ignore the registry default and force the feature off.
+SHACF_AUTOAPPEND_FORCE_ON   :: 0x40000000  // Ignore the registry default and force the feature on. (Also know as AutoComplete)
+SHACF_AUTOAPPEND_FORCE_OFF  :: 0x80000000  // Ignore the registry default and force the feature off. (Also know as AutoComplete)
+
+LWSTDAPI :: HRESULT
+
 CLSID_FileOpenDialog := &GUID{0xDC1C5A9C, 0xE88A, 0x4DDE, {0xA5, 0xA1, 0x60, 0xF8, 0x2A, 0x20, 0xAE, 0xF7}}
 CLSID_FileSaveDialog := &GUID{0xC0B4E2F3, 0xBA21, 0x4773, {0x8D, 0xBA, 0x33, 0x5E, 0xC9, 0x46, 0xEB, 0x8B}}
+CLSID_TaskbarList := &GUID{0x56FDF344, 0xFD6D, 0x11d0, {0x95, 0x8A, 0x00, 0x60, 0x97, 0xC9, 0xA0, 0x90}}
 
 IID_IFileDialog := &GUID{0x42F85136, 0xDB7E, 0x439C, {0x85, 0xF1, 0xE4, 0x07, 0x5D, 0x13, 0x5F, 0xC8}}
 IID_IFileSaveDialog := &GUID{0x84BCCD23, 0x5FDE, 0x4CDB, {0xAE, 0xA4, 0xAF, 0x64, 0xB8, 0x3D, 0x78, 0xAB}}
 IID_IFileOpenDialog := &GUID{0xD57C7288, 0xD4AD, 0x4768, {0xBE, 0x02, 0x9D, 0x96, 0x95, 0x32, 0xD9, 0x60}}
+IID_ITaskbarList := &GUID{0x56FDF342, 0xFD6D, 0x11d0, {0x95, 0x8A, 0x00, 0x60, 0x97, 0xC9, 0xA0, 0x90}}
+IID_ITaskbarList2 := &GUID{0x602D4995, 0xB13A, 0x429b, {0xA6, 0x6E, 0x19, 0x35, 0xE4, 0x4F, 0x43, 0x17}}
+IID_ITaskbarList3 := &GUID{0xea1afb91, 0x9e28, 0x4b86, {0x90, 0xe9, 0x9e, 0x9f, 0x8a, 0x5e, 0xef, 0xaf}}
 
 IModalWindow :: struct #raw_union {
 	#subtype IUnknown: IUnknown,
@@ -3366,6 +3676,84 @@ IFileSaveDialogVtbl :: struct {
 	SetCollectedProperties: proc "stdcall" (this: ^IFileSaveDialog, pList: ^IPropertyDescriptionList, fAppendDefault: BOOL) -> HRESULT,
 	GetProperties:          proc "stdcall" (this: ^IFileSaveDialog, ppStore: ^^IPropertyStore) -> HRESULT,
 	ApplyProperties:        proc "stdcall" (this: ^IFileSaveDialog, psi: ^IShellItem, pStore: ^IPropertyStore, hwnd: HWND, pSink: ^IFileOperationProgressSink) -> HRESULT,
+}
+
+ITaskbarList :: struct #raw_union {
+	#subtype IUnknown: IUnknown,
+	using Vtbl: ^ITaskbarListVtbl,
+}
+ITaskbarListVtbl :: struct {
+	using IUnknownVtbl: IUnknownVtbl,
+	HrInit: proc "stdcall" (this: ^ITaskbarList) -> HRESULT,
+	AddTab: proc "stdcall" (this: ^ITaskbarList, hwnd: HWND) -> HRESULT,
+	DeleteTab: proc "stdcall" (this: ^ITaskbarList, hwnd: HWND) -> HRESULT,
+	ActivateTab: proc "stdcall" (this: ^ITaskbarList, hwnd: HWND) -> HRESULT,
+	SetActiveAlt: proc "stdcall" (this: ^ITaskbarList, hwnd: HWND) -> HRESULT,
+}
+
+ITaskbarList2 :: struct #raw_union {
+	#subtype ITaskbarList: ITaskbarList,
+	using Vtbl: ^ITaskbarList2Vtbl,
+}
+ITaskbarList2Vtbl :: struct {
+	using ITaskbarListVtbl: ITaskbarListVtbl,
+	MarkFullscreenWindow: proc "stdcall" (this: ^ITaskbarList2, hwnd: HWND, fFullscreen: BOOL) -> HRESULT,
+}
+
+TBPFLAG :: enum c_int {
+	NOPROGRESS    = 0,
+	INDETERMINATE = 0x1,
+	NORMAL        = 0x2,
+	ERROR         = 0x4,
+	PAUSED        = 0x8,
+}
+
+THUMBBUTTONFLAGS :: enum c_int {
+	ENABLED        = 0,
+	DISABLED       = 0x1,
+	DISMISSONCLICK = 0x2,
+	NOBACKGROUND   = 0x4,
+	HIDDEN         = 0x8,
+	NONINTERACTIVE = 0x10,
+}
+
+THUMBBUTTONMASK :: enum c_int {
+	BITMAP  = 0x1,
+	ICON    = 0x2,
+	TOOLTIP = 0x4,
+	FLAGS   = 0x8,
+}
+
+THUMBBUTTON :: struct {
+	dwMask: THUMBBUTTONMASK,
+	iId: UINT,
+	iBitmap: UINT,
+	hIcon: HICON,
+	szTip: [260]WCHAR,
+	dwFlags: THUMBBUTTONFLAGS,
+}
+LPTHUMBBUTTON :: ^THUMBBUTTON
+
+HIMAGELIST :: ^IUnknown
+
+ITaskbarList3 :: struct #raw_union {
+	#subtype ITaskbarList2: ITaskbarList2,
+	using Vtbl: ^ITaskbarList3Vtbl,
+}
+ITaskbarList3Vtbl :: struct {
+	using ITaskbarList2Vtbl: ITaskbarList2Vtbl,
+	SetProgressValue: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, ullCompleted: ULONGLONG, ullTotal: ULONGLONG) -> HRESULT,
+	SetProgressState: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, tbpFlags: TBPFLAG) -> HRESULT,
+	RegisterTab: proc "stdcall" (this: ^ITaskbarList3, hwndTab: HWND, hwndMDI: HWND) -> HRESULT,
+	UnregisterTab: proc "stdcall" (this: ^ITaskbarList3, hwndTab: HWND) -> HRESULT,
+	SetTabOrder: proc "stdcall" (this: ^ITaskbarList3, hwndTab: HWND, hwndInsertBefore: HWND) -> HRESULT,
+	SetTabActive: proc "stdcall" (this: ^ITaskbarList3, hwndTab: HWND, hwndMDI: HWND, dwReserved: DWORD) -> HRESULT,
+	ThumbBarAddButtons: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, cButtons: UINT, pButton: LPTHUMBBUTTON) -> HRESULT,
+	ThumbBarUpdateButtons: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, cButtons: UINT, pButton: LPTHUMBBUTTON) -> HRESULT,
+	ThumbBarSetImageList: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, himl: HIMAGELIST) -> HRESULT,
+	SetOverlayIcon: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, hIcon: HICON, pszDescription: LPCWSTR) -> HRESULT,
+	SetThumbnailTooltip: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, pszTip: LPCWSTR) -> HRESULT,
+	SetThumbnailClip: proc "stdcall" (this: ^ITaskbarList3, hwnd: HWND, prcClip: ^RECT) -> HRESULT,
 }
 
 MEMORYSTATUSEX :: struct {

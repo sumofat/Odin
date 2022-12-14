@@ -124,6 +124,10 @@ Window_contentView :: proc(self: ^Window) -> ^View {
 Window_setContentView :: proc(self: ^Window, content_view: ^View) {
 	msgSend(nil, self, "setContentView:", content_view)
 }
+@(objc_type=Window, objc_name="contentLayoutRect")
+Window_contentLayoutRect :: proc(self: ^Window) -> Rect {
+	return msgSend(Rect, self, "contentLayoutRect")
+}
 @(objc_type=Window, objc_name="frame")
 Window_frame :: proc(self: ^Window) -> Rect {
 	return msgSend(Rect, self, "frame")
@@ -155,6 +159,22 @@ Window_makeKeyAndOrderFront :: proc(self: ^Window, key: ^NS.Object) {
 @(objc_type=Window, objc_name="setTitle")
 Window_setTitle :: proc(self: ^Window, title: ^NS.String) {
 	msgSend(nil, self, "setTitle:", title)
+}
+@(objc_type=Window, objc_name="setTitlebarAppearsTransparent")
+Window_setTitlebarAppearsTransparent :: proc(self: ^Window, ok: NS.BOOL) {
+	msgSend(nil, self, "setTitlebarAppearsTransparent:", ok)
+}
+@(objc_type=Window, objc_name="setMovable")
+Window_setMovable :: proc(self: ^Window, ok: NS.BOOL) {
+	msgSend(nil, self, "setMovable:", ok)
+}
+@(objc_type=Window, objc_name="setMovableByWindowBackground")
+Window_setMovableByWindowBackground :: proc(self: ^Window, ok: NS.BOOL) {
+	msgSend(nil, self, "setMovableByWindowBackground:", ok)
+}
+@(objc_type=Window, objc_name="setStyleMask")
+Window_setStyleMask :: proc(self: ^Window, style_mask: WindowStyleMask) {
+	msgSend(nil, self, "setStyleMask:", style_mask)
 }
 @(objc_type=Window, objc_name="close")
 Window_close :: proc(self: ^Window) {

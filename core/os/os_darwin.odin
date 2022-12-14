@@ -333,7 +333,7 @@ foreign dl {
 	@(link_name="dlerror") _unix_dlerror :: proc() -> cstring ---
 }
 
-get_last_error :: proc() -> int {
+get_last_error :: proc "contextless" () -> int {
 	return __error()^
 }
 
@@ -369,27 +369,48 @@ close :: proc(fd: Handle) -> bool {
 	return _unix_close(fd) == 0
 }
 
+@(private)
+MAX_RW :: 0x7fffffff // The limit on Darwin is max(i32), trying to read/write more than that fails.
+
 write :: proc(fd: Handle, data: []u8) -> (int, Errno) {
 	assert(fd != -1)
 
-	if len(data) == 0 {
-		return 0, 0
+	bytes_total := len(data)
+	bytes_written_total := 0
+
+	for bytes_written_total < bytes_total {
+		bytes_to_write := min(bytes_total - bytes_written_total, MAX_RW)
+		slice := data[bytes_written_total:bytes_written_total + bytes_to_write]
+		bytes_written := _unix_write(fd, raw_data(slice), bytes_to_write)
+		if bytes_written == -1 {
+			return bytes_written_total, 1
+		}
+		bytes_written_total += bytes_written
 	}
-	bytes_written := _unix_write(fd, raw_data(data), len(data))
-	if bytes_written == -1 {
-		return 0, 1
-	}
-	return bytes_written, 0
+
+	return bytes_written_total, 0
 }
 
 read :: proc(fd: Handle, data: []u8) -> (int, Errno) {
 	assert(fd != -1)
 
-	bytes_read := _unix_read(fd, raw_data(data), len(data))
-	if bytes_read == -1 {
-		return 0, 1
+	bytes_total := len(data)
+	bytes_read_total := 0
+
+	for bytes_read_total < bytes_total {
+		bytes_to_read := min(bytes_total - bytes_read_total, MAX_RW)
+		slice := data[bytes_read_total:bytes_read_total + bytes_to_read]
+		bytes_read := _unix_read(fd, raw_data(slice), bytes_to_read)
+		if bytes_read == -1 {
+			return bytes_read_total, 1
+		}
+		if bytes_read == 0 {
+			break
+		}
+		bytes_read_total += bytes_read
 	}
-	return bytes_read, 0
+
+	return bytes_read_total, 0
 }
 
 seek :: proc(fd: Handle, offset: i64, whence: int) -> (i64, Errno) {
@@ -625,9 +646,15 @@ access :: proc(path: string, mask: int) -> bool {
 	return _unix_access(cstr, mask) == 0
 }
 
-heap_alloc :: proc(size: int) -> rawptr {
-	assert(size > 0)
-	return _unix_calloc(1, size)
+heap_alloc :: proc(size: int, zero_memory := true) -> rawptr {
+	if size <= 0 {
+		return nil
+	}
+	if zero_memory {
+		return _unix_calloc(1, size)
+	} else {
+		return _unix_malloc(size)
+	}
 }
 heap_resize :: proc(ptr: rawptr, new_size: int) -> rawptr {
 	// NOTE: _unix_realloc doesn't guarantee new memory will be zeroed on

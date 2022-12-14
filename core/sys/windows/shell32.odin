@@ -14,4 +14,12 @@ foreign shell32 {
 		lpDirectory: LPCWSTR,
 		nShowCmd: INT,
 	) -> HINSTANCE ---
+	ShellExecuteExW :: proc(pExecInfo: ^SHELLEXECUTEINFOW) -> BOOL ---
+	SHCreateDirectoryExW :: proc(
+		hwnd: HWND,
+		pszPath: LPCWSTR,
+		psa: ^SECURITY_ATTRIBUTES,
+	) -> c_int ---
+	SHFileOperationW :: proc(lpFileOp: LPSHFILEOPSTRUCTW) -> c_int ---
+	SHGetFolderPathW :: proc(hwnd: HWND, csidl: c_int, hToken: HANDLE, dwFlags: DWORD, pszPath: LPWSTR) -> HRESULT ---
 }

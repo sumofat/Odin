@@ -584,7 +584,11 @@ void check_label(CheckerContext *ctx, Ast *label, Ast *parent) {
 // Returns 'true' for 'continue', 'false' for 'return'
 bool check_using_stmt_entity(CheckerContext *ctx, AstUsingStmt *us, Ast *expr, bool is_selector, Entity *e) {
 	if (e == nullptr) {
-		error(us->token, "'using' applied to an unknown entity");
+		if (is_blank_ident(expr)) {
+			error(us->token, "'using' in a statement is not allowed with the blank identifier '_'");
+		} else {
+			error(us->token, "'using' applied to an unknown entity");
+		}
 		return true;
 	}
 
@@ -2014,6 +2018,9 @@ void check_stmt_internal(CheckerContext *ctx, Ast *node, u32 flags) {
 			ctx->in_defer = true;
 			check_stmt(ctx, ds->stmt, 0);
 			ctx->in_defer = out_in_defer;
+			if (ctx->decl) {
+				ctx->decl->defer_used += 1;
+			}
 		}
 	case_end;
 

@@ -1,5 +1,6 @@
 package mem
 
+import "core:builtin"
 import "core:runtime"
 
 Raw_Any           :: runtime.Raw_Any
@@ -21,22 +22,4 @@ make_any :: proc "contextless" (data: rawptr, id: typeid) -> any {
 	return transmute(any)Raw_Any{data, id}
 }
 
-raw_array_data         :: runtime.raw_array_data
-raw_simd_data          :: runtime.raw_simd_data
-raw_string_data        :: runtime.raw_string_data
-raw_slice_data         :: runtime.raw_slice_data
-raw_dynamic_array_data :: runtime.raw_dynamic_array_data
-raw_data               :: runtime.raw_data
-
-
-Poly_Raw_Map_Entry :: struct($Key, $Value: typeid) {
-	hash:  uintptr,
-	next:  int,
-	key:   Key,
-	value: Value,	
-}
-
-Poly_Raw_Map :: struct($Key, $Value: typeid) {
-	hashes:  []int,
-	entries: [dynamic]Poly_Raw_Map_Entry(Key, Value),
-}
+raw_data :: builtin.raw_data

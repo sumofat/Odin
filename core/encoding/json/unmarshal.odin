@@ -384,16 +384,14 @@ unmarshal_object :: proc(p: ^Parser, v: any, end_token: Token_Kind) -> (err: Unm
 					break struct_loop
 				}
 				continue struct_loop
+			} else {
+				// allows skipping unused struct fields
+				parse_value(p) or_return
+				if parse_comma(p) {
+					break struct_loop
+				}
+				continue struct_loop
 			}
-			
-			// NOTE(bill, 2022-09-14): Previously this would not be allowed
-			//         {"foo": 123, "bar": 456}
-			//         T :: struct{foo: int}
-			// `T` is missing the `bar` field
-			// The line below is commented out to ignore fields in an object which
-			// do not have a corresponding target field
-			//
-			// return Unsupported_Type_Error{v.id, p.curr_token}
 		}
 		
 	case reflect.Type_Info_Map:
@@ -401,11 +399,9 @@ unmarshal_object :: proc(p: ^Parser, v: any, end_token: Token_Kind) -> (err: Unm
 			return UNSUPPORTED_TYPE
 		}
 		raw_map := (^mem.Raw_Map)(v.data)
-		if raw_map.entries.allocator.procedure == nil {
-			raw_map.entries.allocator = p.allocator
+		if raw_map.allocator.procedure == nil {
+			raw_map.allocator = p.allocator
 		}
-		
-		header := runtime.__get_map_header_table_runtime(t)
 		
 		elem_backing := bytes_make(t.value.size, t.value.align, p.allocator) or_return
 		defer delete(elem_backing, p.allocator)
@@ -423,7 +419,6 @@ unmarshal_object :: proc(p: ^Parser, v: any, end_token: Token_Kind) -> (err: Unm
 				return err
 			}
 
-			key_hash := runtime.default_hasher_string(&key, 0)
 			key_ptr := rawptr(&key)
 
 			key_cstr: cstring
@@ -432,7 +427,7 @@ unmarshal_object :: proc(p: ^Parser, v: any, end_token: Token_Kind) -> (err: Unm
 				key_ptr = &key_cstr
 			}
 			
-			set_ptr := runtime.__dynamic_map_set(raw_map, header, key_hash, key_ptr, map_backing_value.data)
+			set_ptr := runtime.__dynamic_map_set_without_hash(raw_map, t.map_info, key_ptr, map_backing_value.data)
 			if set_ptr == nil {
 				delete(key, p.allocator)
 			} 

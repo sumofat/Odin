@@ -67,6 +67,8 @@ void lb_init_module(lbModule *m, Checker *c) {
 	map_init(&m->function_type_map, a);
 	map_init(&m->equal_procs, a);
 	map_init(&m->hasher_procs, a);
+	map_init(&m->map_get_procs, a);
+	map_init(&m->map_set_procs, a);
 	array_init(&m->procedures_to_generate, a, 0, 1024);
 	array_init(&m->missing_procedures_to_check, a, 0, 16);
 	map_init(&m->debug_values, a);
@@ -75,7 +77,8 @@ void lb_init_module(lbModule *m, Checker *c) {
 	string_map_init(&m->objc_classes, a);
 	string_map_init(&m->objc_selectors, a);
 
-	map_init(&m->map_header_table_map, a, 0);
+	map_init(&m->map_info_map, a, 0);
+	map_init(&m->map_cell_info_map, a, 0);
 
 }
 
@@ -383,16 +386,27 @@ Type *lb_addr_type(lbAddr const &addr) {
 	if (addr.addr.value == nullptr) {
 		return nullptr;
 	}
-	if (addr.kind == lbAddr_Map) {
-		Type *t = base_type(addr.map.type);
-		GB_ASSERT(is_type_map(t));
-		return t->Map.value;
-	}
-	if (addr.kind == lbAddr_Swizzle) {
+	switch (addr.kind) {
+	case lbAddr_Map:
+		{
+			Type *t = base_type(addr.map.type);
+			GB_ASSERT(is_type_map(t));
+			return t->Map.value;
+		}
+	case lbAddr_Swizzle:
 		return addr.swizzle.type;
-	}
-	if (addr.kind == lbAddr_SwizzleLarge) {
+	case lbAddr_SwizzleLarge:
 		return addr.swizzle_large.type;
+	case lbAddr_Context:
+		if (addr.ctx.sel.index.count > 0) {
+			Type *t = t_context;
+			for_array(i, addr.ctx.sel.index) {
+				GB_ASSERT(is_type_struct(t));
+				t = base_type(t)->Struct.fields[addr.ctx.sel.index[i]]->type;
+			}
+			return t;
+		}
+		break;
 	}
 	return type_deref(addr.addr.type);
 }
@@ -714,7 +728,7 @@ void lb_addr_store(lbProcedure *p, lbAddr addr, lbValue value) {
 
 		return;
 	} else if (addr.kind == lbAddr_Map) {
-		lb_insert_dynamic_map_key_and_value(p, addr.addr, addr.map.type, addr.map.key, value, p->curr_stmt);
+		lb_internal_dynamic_map_set(p, addr.addr, addr.map.type, addr.map.key, value, p->curr_stmt);
 		return;
 	} else if (addr.kind == lbAddr_Context) {
 		lbAddr old_addr = lb_find_or_generate_context_ptr(p);
@@ -1485,9 +1499,6 @@ LLVMTypeRef lb_type_internal_for_procedures_raw(lbModule *m, Type *type) {
 	}
 
 	unsigned param_count = 0;
-	if (type->Proc.calling_convention == ProcCC_Odin) {
-		param_count += 1;
-	}
 
 	if (type->Proc.param_count != 0) {
 		GB_ASSERT(type->Proc.params->kind == Type_Tuple);
@@ -1505,18 +1516,23 @@ LLVMTypeRef lb_type_internal_for_procedures_raw(lbModule *m, Type *type) {
 	m->internal_type_level += 1;
 	defer (m->internal_type_level -= 1);
 
+	bool return_is_tuple = false;
 	LLVMTypeRef ret = nullptr;
 	LLVMTypeRef *params = gb_alloc_array(permanent_allocator(), LLVMTypeRef, param_count);
 	bool *params_by_ptr = gb_alloc_array(permanent_allocator(), bool, param_count);
 	if (type->Proc.result_count != 0) {
 		Type *single_ret = reduce_tuple_to_single_type(type->Proc.results);
+		if (is_type_proc(single_ret)) {
+			single_ret = t_rawptr;
+		}
 		ret = lb_type(m, single_ret);
-		if (ret != nullptr) {
-			if (is_type_boolean(single_ret) &&
-			    is_calling_convention_none(type->Proc.calling_convention) &&
-			    type_size_of(single_ret) <= 1) {
-				ret = LLVMInt1TypeInContext(m->ctx);
-			}
+		if (is_type_tuple(single_ret)) {
+			return_is_tuple = true;
+		}
+		if (is_type_boolean(single_ret) &&
+		    is_calling_convention_none(type->Proc.calling_convention) &&
+		    type_size_of(single_ret) <= 1) {
+			ret = LLVMInt1TypeInContext(m->ctx);
 		}
 	}
 
@@ -1554,12 +1570,8 @@ LLVMTypeRef lb_type_internal_for_procedures_raw(lbModule *m, Type *type) {
 			params[param_index++] = param_type;
 		}
 	}
-	if (param_index < param_count) {
-		params[param_index++] = lb_type(m, t_rawptr);
-	}
 	GB_ASSERT(param_index == param_count);
-
-	lbFunctionType *ft = lb_get_abi_info(m->ctx, params, param_count, ret, ret != nullptr, type->Proc.calling_convention);
+	lbFunctionType *ft = lb_get_abi_info(m->ctx, params, param_count, ret, ret != nullptr, return_is_tuple, type->Proc.calling_convention);
 	{
 		for_array(j, ft->args) {
 			auto arg = ft->args[j];
@@ -1576,10 +1588,10 @@ LLVMTypeRef lb_type_internal_for_procedures_raw(lbModule *m, Type *type) {
 		              LLVMPrintTypeToString(ft->ret.type),
 		              LLVMGetTypeContext(ft->ret.type), ft->ctx, LLVMGetGlobalContext());
 	}
-	for_array(j, ft->args) {
-		if (params_by_ptr[j]) {
+	for (unsigned i = 0; i < param_count; i++) {
+		if (params_by_ptr[i]) {
 			// NOTE(bill): The parameter needs to be passed "indirectly", override it
-			ft->args[j].kind = lbArg_Indirect;
+			ft->args[i].kind = lbArg_Indirect;
 		}
 	}
 
@@ -1920,38 +1932,8 @@ LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 
 	case Type_Map:
 		init_map_internal_types(type);
-		{
-			Type *internal_type = type->Map.internal_type;
-			GB_ASSERT(internal_type->kind == Type_Struct);
-
-			m->internal_type_level -= 1;
-			defer (m->internal_type_level += 1);
-
-			unsigned field_count = cast(unsigned)(internal_type->Struct.fields.count);
-			GB_ASSERT(field_count == 2);
-			LLVMTypeRef *fields = gb_alloc_array(temporary_allocator(), LLVMTypeRef, field_count);
-
-			LLVMTypeRef entries_fields[] = {
-				lb_type(m, t_rawptr), // data
-				lb_type(m, t_int), // len
-				lb_type(m, t_int), // cap
-				lb_type(m, t_allocator), // allocator
-			};
-
-			fields[0] = lb_type(m, internal_type->Struct.fields[0]->type);
-			fields[1] = LLVMStructTypeInContext(ctx, entries_fields, gb_count_of(entries_fields), false);
-			
-			{ // Add this to simplify things
-				lbStructFieldRemapping entries_field_remapping = {};
-				slice_init(&entries_field_remapping, permanent_allocator(), gb_count_of(entries_fields));
-				for_array(i, entries_field_remapping) {
-					entries_field_remapping[i] = cast(i32)i;
-				}
-				map_set(&m->struct_field_remapping, cast(void *)fields[1], entries_field_remapping);
-			}
-			
-			return LLVMStructTypeInContext(ctx, fields, field_count, false);
-		}
+		GB_ASSERT(t_raw_map != nullptr);
+		return lb_type_internal(m, t_raw_map);
 
 	case Type_Struct:
 		{
@@ -2000,7 +1982,15 @@ LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 				}
 				
 				field_remapping[field_index] = cast(i32)fields.count;
-				array_add(&fields, lb_type(m, field->type));
+
+				Type *field_type = field->type;
+				if (is_type_proc(field_type)) {
+					// NOTE(bill, 2022-11-23): Prevent type cycle declaration (e.g. vtable) of procedures
+					// because LLVM is dumb with procedure types
+					field_type = t_rawptr;
+				}
+
+				array_add(&fields, lb_type(m, field_type));
 				
 				if (!type->Struct.is_packed) {
 					padding_offset = align_formula(padding_offset, type_align_of(field->type));
@@ -2174,11 +2164,11 @@ LLVMTypeRef lb_type(lbModule *m, Type *type) {
 	return llvm_type;
 }
 
-lbFunctionType *lb_get_function_type(lbModule *m, lbProcedure *p, Type *pt) {
+lbFunctionType *lb_get_function_type(lbModule *m, Type *pt) {
 	lbFunctionType **ft_found = nullptr;
 	ft_found = map_get(&m->function_type_map, pt);
 	if (!ft_found) {
-		LLVMTypeRef llvm_proc_type = lb_type(p->module, pt);
+		LLVMTypeRef llvm_proc_type = lb_type(m, pt);
 		gb_unused(llvm_proc_type);
 		ft_found = map_get(&m->function_type_map, pt);
 	}
@@ -2590,6 +2580,15 @@ lbValue lb_find_or_add_entity_string_byte_slice_with_type(lbModule *m, String co
 
 
 lbValue lb_find_ident(lbProcedure *p, lbModule *m, Entity *e, Ast *expr) {
+	if (e->flags & EntityFlag_Param) {
+		// NOTE(bill): Bypass the stack copied variable for
+		// direct parameters as there is no need for the direct load
+		auto *found = map_get(&p->direct_parameters, e);
+		if (found) {
+			return *found;
+		}
+	}
+
 	auto *found = map_get(&m->values, e);
 	if (found) {
 		auto v = *found;
@@ -2869,7 +2868,7 @@ lbValue lb_build_cond(lbProcedure *p, Ast *cond, lbBlock *true_block, lbBlock *f
 }
 
 
-lbAddr lb_add_local(lbProcedure *p, Type *type, Entity *e, bool zero_init, i32 param_index, bool force_no_init) {
+lbAddr lb_add_local(lbProcedure *p, Type *type, Entity *e, bool zero_init, bool force_no_init) {
 	GB_ASSERT(p->decl_block != p->curr_block);
 	LLVMPositionBuilderAtEnd(p->builder, p->decl_block->block);
 
@@ -2923,7 +2922,7 @@ lbAddr lb_add_local_generated(lbProcedure *p, Type *type, bool zero_init) {
 }
 
 lbAddr lb_add_local_generated_temp(lbProcedure *p, Type *type, i64 min_alignment) {
-	lbAddr res = lb_add_local(p, type, nullptr, false, 0, true);
+	lbAddr res = lb_add_local(p, type, nullptr, false, true);
 	lb_try_update_alignment(res.addr, cast(unsigned)min_alignment);
 	return res;
 }

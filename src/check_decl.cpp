@@ -1488,6 +1488,11 @@ void check_proc_body(CheckerContext *ctx_, Token token, DeclInfo *decl, Type *ty
 				if (!(e->flags & EntityFlag_Using)) {
 					continue;
 				}
+				if (is_blank_ident(e->token)) {
+                    error(e->token, "'using' a procedure parameter requires a non blank identifier");
+					break;
+				}
+
 				bool is_value = (e->flags & EntityFlag_Value) != 0 && !is_type_pointer(e->type);
 				String name = e->token.string;
 				Type *t = base_type(type_deref(e->type));
@@ -1539,7 +1544,11 @@ void check_proc_body(CheckerContext *ctx_, Token token, DeclInfo *decl, Type *ty
 			// NOTE(bill): Don't err here
 		}
 
+		GB_ASSERT(decl->defer_use_checked == false);
+
 		check_stmt_list(ctx, bs->stmts, Stmt_CheckScopeDecls);
+
+		decl->defer_use_checked = true;
 
 		for_array(i, bs->stmts) {
 			Ast *stmt = bs->stmts[i];
@@ -1575,6 +1584,7 @@ void check_proc_body(CheckerContext *ctx_, Token token, DeclInfo *decl, Type *ty
 				}
 			}
 		}
+
 	}
 	check_close_scope(ctx);
 

@@ -293,6 +293,8 @@ LLVMMetadataRef lb_debug_type_internal(lbModule *m, Type *type) {
 	case Type_Named:
 		GB_PANIC("Type_Named should be handled in lb_debug_type separately");
 
+	case Type_SoaPointer:
+		return LLVMDIBuilderCreatePointerType(m->debug_builder, lb_debug_type(m, type->SoaPointer.elem), word_bits, word_bits, 0, nullptr, 0);
 	case Type_Pointer:
 		return LLVMDIBuilderCreatePointerType(m->debug_builder, lb_debug_type(m, type->Pointer.elem), word_bits, word_bits, 0, nullptr, 0);
 	case Type_MultiPointer:
@@ -567,14 +569,43 @@ LLVMMetadataRef lb_debug_type(lbModule *m, Type *type) {
 		case Type_Struct:
 		case Type_Union:
 		case Type_BitSet:
-			LLVMMetadataRef temp_forward_decl = LLVMDIBuilderCreateReplaceableCompositeType(
-				m->debug_builder, tag, name_text, name_len, nullptr, nullptr, 0, 0, size_in_bits, align_in_bits, flags, "", 0
-			);
-			idt.metadata = temp_forward_decl;
+			{
+				LLVMMetadataRef temp_forward_decl = LLVMDIBuilderCreateReplaceableCompositeType(
+					m->debug_builder, tag, name_text, name_len, nullptr, nullptr, 0, 0, size_in_bits, align_in_bits, flags, "", 0
+				);
+				idt.metadata = temp_forward_decl;
 
-			array_add(&m->debug_incomplete_types, idt);
-			lb_set_llvm_metadata(m, type, temp_forward_decl);
-			return temp_forward_decl;
+				array_add(&m->debug_incomplete_types, idt);
+				lb_set_llvm_metadata(m, type, temp_forward_decl);
+
+				LLVMMetadataRef dummy = nullptr;
+				switch (bt->kind) {
+				case Type_Slice:
+					dummy = lb_debug_type(m, bt->Slice.elem);
+					dummy = lb_debug_type(m, alloc_type_pointer(bt->Slice.elem));
+					dummy = lb_debug_type(m, t_int);
+					break;
+				case Type_DynamicArray:
+					dummy = lb_debug_type(m, bt->DynamicArray.elem);
+					dummy = lb_debug_type(m, alloc_type_pointer(bt->DynamicArray.elem));
+					dummy = lb_debug_type(m, t_int);
+					dummy = lb_debug_type(m, t_allocator);
+					break;
+				case Type_Map:
+					dummy = lb_debug_type(m, bt->Map.key);
+					dummy = lb_debug_type(m, bt->Map.value);
+					dummy = lb_debug_type(m, t_int);
+					dummy = lb_debug_type(m, t_allocator);
+					dummy = lb_debug_type(m, t_uintptr);
+					break;
+				case Type_BitSet:
+					if (bt->BitSet.elem)       dummy = lb_debug_type(m, bt->BitSet.elem);
+					if (bt->BitSet.underlying) dummy = lb_debug_type(m, bt->BitSet.underlying);
+					break;
+				}
+
+				return temp_forward_decl;
+			}
 		}
 	}
 
@@ -657,20 +688,33 @@ void lb_debug_complete_types(lbModule *m) {
 			case Type_Slice:
 				element_count = 2;
 				elements = gb_alloc_array(temporary_allocator(), LLVMMetadataRef, element_count);
-				elements[0] = lb_debug_struct_field(m, str_lit("data"), alloc_type_pointer(bt->Slice.elem), 0*word_bits);
+				#if defined(GB_SYSTEM_WINDOWS)
+					elements[0] = lb_debug_struct_field(m, str_lit("data"), alloc_type_pointer(bt->Slice.elem), 0*word_bits);
+				#else
+					// FIX HACK TODO(bill): For some reason this causes a crash in *nix systems due to the reference counting
+					// of the debug type information
+					elements[0] = lb_debug_struct_field(m, str_lit("data"), t_rawptr, 0*word_bits);
+				#endif
 				elements[1] = lb_debug_struct_field(m, str_lit("len"),  t_int,                              1*word_bits);
 				break;
 			case Type_DynamicArray:
 				element_count = 4;
 				elements = gb_alloc_array(temporary_allocator(), LLVMMetadataRef, element_count);
-				elements[0] = lb_debug_struct_field(m, str_lit("data"),      alloc_type_pointer(bt->DynamicArray.elem), 0*word_bits);
+				#if defined(GB_SYSTEM_WINDOWS)
+					elements[0] = lb_debug_struct_field(m, str_lit("data"), alloc_type_pointer(bt->DynamicArray.elem), 0*word_bits);
+				#else
+					// FIX HACK TODO(bill): For some reason this causes a crash in *nix systems due to the reference counting
+					// of the debug type information
+					elements[0] = lb_debug_struct_field(m, str_lit("data"), t_rawptr, 0*word_bits);
+				#endif
 				elements[1] = lb_debug_struct_field(m, str_lit("len"),       t_int,                                     1*word_bits);
 				elements[2] = lb_debug_struct_field(m, str_lit("cap"),       t_int,                                     2*word_bits);
 				elements[3] = lb_debug_struct_field(m, str_lit("allocator"), t_allocator,                               3*word_bits);
 				break;
 
 			case Type_Map:
-				bt = bt->Map.internal_type;
+				GB_ASSERT(t_raw_map != nullptr);
+				bt = base_type(t_raw_map);
 				/*fallthrough*/
 			case Type_Struct:
 				if (file == nullptr) {
@@ -1078,4 +1122,117 @@ void lb_add_debug_context_variable(lbProcedure *p, lbAddr const &ctx) {
 	}
 
 	lb_add_debug_local_variable(p, ptr, t_context, token);
+}
+
+
+String debug_info_mangle_constant_name(Entity *e, bool *did_allocate_) {
+	String name = e->token.string;
+	if (e->pkg && e->pkg->name.len > 0) {
+		// NOTE(bill): C++ NONSENSE FOR DEBUG SHITE!
+		name = concatenate3_strings(heap_allocator(), e->pkg->name, str_lit("::"), name);
+		if (did_allocate_) *did_allocate_ = true;
+	}
+	return name;
+}
+
+void add_debug_info_global_variable_expr(lbModule *m, String const &name, LLVMMetadataRef dtype, LLVMMetadataRef expr) {
+	LLVMMetadataRef scope = nullptr;
+	LLVMMetadataRef file = nullptr;
+	unsigned line = 0;
+
+	LLVMMetadataRef decl = nullptr;
+
+	LLVMDIBuilderCreateGlobalVariableExpression(
+		m->debug_builder, scope,
+		cast(char const *)name.text, cast(size_t)name.len,
+		"", 0, // Linkage
+		file, line, dtype,
+		false, // local to unit
+		expr, decl, 8/*AlignInBits*/);
+}
+
+void add_debug_info_for_global_constant_internal_i64(lbModule *m, Entity *e, LLVMMetadataRef dtype, i64 v) {
+	LLVMMetadataRef expr = LLVMDIBuilderCreateConstantValueExpression(m->debug_builder, v);
+
+	bool did_allocate = false;
+	String name = debug_info_mangle_constant_name(e, &did_allocate);
+	defer (if (did_allocate) {
+		gb_free(heap_allocator(), name.text);
+	});
+
+	add_debug_info_global_variable_expr(m, name, dtype, expr);
+	if ((e->pkg && e->pkg->kind == Package_Init) ||
+	    (e->scope && (e->scope->flags & ScopeFlag_Global))) {
+		add_debug_info_global_variable_expr(m, e->token.string, dtype, expr);
+	}
+}
+
+void add_debug_info_for_global_constant_from_entity(lbGenerator *gen, Entity *e) {
+	if (e == nullptr || e->kind != Entity_Constant) {
+		return;
+	}
+	if (is_blank_ident(e->token)) {
+		return;
+	}
+	lbModule *m = &gen->default_module;
+	if (USE_SEPARATE_MODULES) {
+		m = lb_pkg_module(gen, e->pkg);
+	}
+
+	if (is_type_integer(e->type)) {
+		ExactValue const &value = e->Constant.value;
+		if (value.kind == ExactValue_Integer) {
+			LLVMMetadataRef dtype = nullptr;
+			i64 v = 0;
+			bool is_signed = false;
+			if (big_int_is_neg(&value.value_integer)) {
+				v = exact_value_to_i64(value);
+				is_signed = true;
+			} else {
+				v = cast(i64)exact_value_to_u64(value);
+			}
+			if (is_type_untyped(e->type)) {
+				dtype = lb_debug_type(m, is_signed ? t_i64 : t_u64);
+			} else {
+				dtype = lb_debug_type(m, e->type);
+			}
+
+			add_debug_info_for_global_constant_internal_i64(m, e, dtype, v);
+		}
+	} else if (is_type_rune(e->type)) {
+		ExactValue const &value = e->Constant.value;
+		if (value.kind == ExactValue_Integer) {
+			LLVMMetadataRef dtype = lb_debug_type(m, t_rune);
+			i64 v = exact_value_to_i64(value);
+			add_debug_info_for_global_constant_internal_i64(m, e, dtype, v);
+		}
+	} else if (is_type_boolean(e->type)) {
+		ExactValue const &value = e->Constant.value;
+		if (value.kind == ExactValue_Bool) {
+			LLVMMetadataRef dtype = lb_debug_type(m, default_type(e->type));
+			i64 v = cast(i64)value.value_bool;
+
+			add_debug_info_for_global_constant_internal_i64(m, e, dtype, v);
+		}
+	} else if (is_type_enum(e->type)) {
+		ExactValue const &value = e->Constant.value;
+		if (value.kind == ExactValue_Integer) {
+			LLVMMetadataRef dtype = lb_debug_type(m, default_type(e->type));
+			i64 v = 0;
+			if (big_int_is_neg(&value.value_integer)) {
+				v = exact_value_to_i64(value);
+			} else {
+				v = cast(i64)exact_value_to_u64(value);
+			}
+
+			add_debug_info_for_global_constant_internal_i64(m, e, dtype, v);
+		}
+	} else if (is_type_pointer(e->type)) {
+		ExactValue const &value = e->Constant.value;
+		if (value.kind == ExactValue_Integer) {
+			LLVMMetadataRef dtype = lb_debug_type(m, default_type(e->type));
+			i64 v = cast(i64)exact_value_to_u64(value);
+			add_debug_info_for_global_constant_internal_i64(m, e, dtype, v);
+		}
+	}
 }

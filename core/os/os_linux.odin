@@ -441,7 +441,7 @@ _get_errno :: proc(res: int) -> Errno {
 }
 
 // get errno from libc
-get_last_error :: proc() -> int {
+get_last_error :: proc "contextless" () -> int {
 	return __errno_location()^
 }
 
@@ -755,9 +755,15 @@ access :: proc(path: string, mask: int) -> (bool, Errno) {
 	return true, ERROR_NONE
 }
 
-heap_alloc :: proc(size: int) -> rawptr {
-	assert(size >= 0)
-	return _unix_calloc(1, c.size_t(size))
+heap_alloc :: proc(size: int, zero_memory := true) -> rawptr {
+	if size <= 0 {
+		return nil
+	}
+	if zero_memory {
+		return _unix_calloc(1, c.size_t(size))
+	} else {
+		return _unix_malloc(c.size_t(size))
+	}
 }
 
 heap_resize :: proc(ptr: rawptr, new_size: int) -> rawptr {

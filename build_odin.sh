@@ -44,6 +44,12 @@ config_darwin() {
 		fi
 	fi
 
+	MAX_LLVM_VERSION=("14.999.999")
+	if [ $(version $($LLVM_CONFIG --version)) -gt $(version $MAX_LLVM_VERSION) ]; then
+		echo "Tried to use " $(which $LLVM_CONFIG) "version" $($LLVM_CONFIG --version)
+		panic "Requirement: llvm-config must be base version smaller than 15"
+	fi
+
 	LDFLAGS="$LDFLAGS -liconv -ldl"
 	CXXFLAGS="$CXXFLAGS $($LLVM_CONFIG --cxxflags --ldflags)"
 	LDFLAGS="$LDFLAGS -lLLVM-C"
@@ -97,6 +103,12 @@ config_linux() {
 		panic "Requirement: llvm-config must be base version greater than 11"
 	fi
 
+	MAX_LLVM_VERSION=("14.999.999")
+	if [ $(version $($LLVM_CONFIG --version)) -gt $(version $MAX_LLVM_VERSION) ]; then
+		echo "Tried to use " $(which $LLVM_CONFIG) "version" $($LLVM_CONFIG --version)
+		panic "Requirement: llvm-config must be base version smaller than 15"
+	fi
+
 	LDFLAGS="$LDFLAGS -ldl"
 	CXXFLAGS="$CXXFLAGS $($LLVM_CONFIG --cxxflags --ldflags)"
 	LDFLAGS="$LDFLAGS $($LLVM_CONFIG  --libs core native --system-libs --libfiles) -Wl,-rpath=\$ORIGIN"
@@ -133,6 +145,14 @@ build_odin() {
 run_demo() {
 	./odin run examples/demo/demo.odin -file
 }
+
+have_which() {
+	if ! which which > /dev/null 2>&1; then
+		panic "Could not find \`which\`"
+	fi
+}
+
+have_which
 
 case $OS in
 Linux)

@@ -922,10 +922,13 @@ void init_universal(void) {
 
 	{
 		Type *equal_args[2] = {t_rawptr, t_rawptr};
-		t_equal_proc = alloc_type_proc_from_types(equal_args, 2, t_bool, false, ProcCC_Contextless);
+		t_equal_proc = alloc_type_proc_from_types(equal_args, gb_count_of(equal_args), t_bool, false, ProcCC_Contextless);
 
 		Type *hasher_args[2] = {t_rawptr, t_uintptr};
-		t_hasher_proc = alloc_type_proc_from_types(hasher_args, 2, t_uintptr, false, ProcCC_Contextless);
+		t_hasher_proc = alloc_type_proc_from_types(hasher_args, gb_count_of(hasher_args), t_uintptr, false, ProcCC_Contextless);
+
+		Type *map_get_args[3] = {/*map*/t_rawptr, /*hash*/t_uintptr, /*key*/t_rawptr};
+		t_map_get_proc = alloc_type_proc_from_types(map_get_args, gb_count_of(map_get_args), t_rawptr, false, ProcCC_Contextless);
 	}
 
 // Constants
@@ -1673,7 +1676,18 @@ bool could_entity_be_lazy(Entity *e, DeclInfo *d) {
 }
 
 void add_entity_and_decl_info(CheckerContext *c, Ast *identifier, Entity *e, DeclInfo *d, bool is_exported) {
-	GB_ASSERT(identifier->kind == Ast_Ident);
+	if (identifier == nullptr) {
+		// NOTE(bill): Should only happen on errors
+		error(e->token, "Invalid variable declaration");
+		return;
+	}
+	if (identifier->kind != Ast_Ident) {
+		// NOTE(bill): This is a safety check
+		gbString s = expr_to_string(identifier);
+		error(identifier, "A variable declaration must be an identifer, got %s", s);
+		gb_string_free(s);
+		return;
+	}
 	GB_ASSERT(e != nullptr && d != nullptr);
 	GB_ASSERT(identifier->Ident.token.string == e->token.string);
 
@@ -1922,7 +1936,8 @@ void add_type_info_type_internal(CheckerContext *c, Type *t) {
 		init_map_internal_types(bt);
 		add_type_info_type_internal(c, bt->Map.key);
 		add_type_info_type_internal(c, bt->Map.value);
-		add_type_info_type_internal(c, bt->Map.internal_type);
+		add_type_info_type_internal(c, t_uintptr); // hash value
+		add_type_info_type_internal(c, t_allocator);
 		break;
 
 	case Type_Tuple:
@@ -2144,7 +2159,8 @@ void add_min_dep_type_info(Checker *c, Type *t) {
 		init_map_internal_types(bt);
 		add_min_dep_type_info(c, bt->Map.key);
 		add_min_dep_type_info(c, bt->Map.value);
-		add_min_dep_type_info(c, bt->Map.internal_type);
+		add_min_dep_type_info(c, t_uintptr); // hash value
+		add_min_dep_type_info(c, t_allocator);
 		break;
 
 	case Type_Tuple:
@@ -2827,16 +2843,21 @@ void init_core_source_code_location(Checker *c) {
 		return;
 	}
 	t_source_code_location = find_core_type(c, str_lit("Source_Code_Location"));
-	t_source_code_location_ptr = alloc_type_pointer(t_allocator);
+	t_source_code_location_ptr = alloc_type_pointer(t_source_code_location);
 }
 
 void init_core_map_type(Checker *c) {
-	if (t_map_hash != nullptr) {
+	if (t_map_info != nullptr) {
 		return;
 	}
-	t_map_hash = find_core_type(c, str_lit("Map_Hash"));
-	t_map_header = find_core_type(c, str_lit("Map_Header"));
-	t_map_header_table = find_core_type(c, str_lit("Map_Header_Table"));
+	init_mem_allocator(c);
+	t_map_info      = find_core_type(c, str_lit("Map_Info"));
+	t_map_cell_info = find_core_type(c, str_lit("Map_Cell_Info"));
+	t_raw_map       = find_core_type(c, str_lit("Raw_Map"));
+
+	t_map_info_ptr      = alloc_type_pointer(t_map_info);
+	t_map_cell_info_ptr = alloc_type_pointer(t_map_cell_info);
+	t_raw_map_ptr       = alloc_type_pointer(t_raw_map);
 }
 
 void init_preload(Checker *c) {
@@ -3227,9 +3248,8 @@ DECL_ATTRIBUTE_PROC(proc_decl_attribute) {
 }
 
 DECL_ATTRIBUTE_PROC(var_decl_attribute) {
-	ExactValue ev = check_decl_attribute_value(c, value);
-
 	if (name == ATTRIBUTE_USER_TAG_NAME) {
+		ExactValue ev = check_decl_attribute_value(c, value);
 		if (ev.kind != ExactValue_String) {
 			error(elem, "Expected a string value for '%.*s'", LIT(name));
 		}
@@ -3241,6 +3261,7 @@ DECL_ATTRIBUTE_PROC(var_decl_attribute) {
 		ac->is_static = true;
 		return true;
 	} else if (name == "thread_local") {
+		ExactValue ev = check_decl_attribute_value(c, value);
 		if (ac->init_expr_list_count > 0) {
 			error(elem, "A thread local variable declaration cannot have initialization values");
 		} else if (c->foreign_context.curr_library) {
@@ -3315,6 +3336,7 @@ DECL_ATTRIBUTE_PROC(var_decl_attribute) {
 		}
 		return true;
 	} else if (name == "link_name") {
+		ExactValue ev = check_decl_attribute_value(c, value);
 		if (ev.kind == ExactValue_String) {
 			ac->link_name = ev.value_string;
 			if (!is_foreign_name_valid(ac->link_name)) {
@@ -3325,6 +3347,7 @@ DECL_ATTRIBUTE_PROC(var_decl_attribute) {
 		}
 		return true;
 	} else if (name == "link_prefix") {
+		ExactValue ev = check_decl_attribute_value(c, value);
 		if (ev.kind == ExactValue_String) {
 			ac->link_prefix = ev.value_string;
 			if (!is_foreign_name_valid(ac->link_prefix)) {
@@ -3335,6 +3358,7 @@ DECL_ATTRIBUTE_PROC(var_decl_attribute) {
 		}
 		return true;
 	} else if (name == "link_section") {
+		ExactValue ev = check_decl_attribute_value(c, value);
 		if (ev.kind == ExactValue_String) {
 			ac->link_section = ev.value_string;
 			if (!is_foreign_name_valid(ac->link_section)) {
