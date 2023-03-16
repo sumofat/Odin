@@ -27,6 +27,21 @@ gb_internal void thread_pool_wait(void) {
 }
 
 
+gb_internal i64 PRINT_PEAK_USAGE(void) {
+	if (build_context.show_more_timings) {
+	#if defined(GB_SYSTEM_WINDOWS)
+		PROCESS_MEMORY_COUNTERS p = {sizeof(p)};
+		if (GetProcessMemoryInfo(GetCurrentProcess(), &p, sizeof(p))) {
+			gb_printf("\n");
+			gb_printf("Peak Memory Size: %.3f MiB\n", (cast(f64)p.PeakWorkingSetSize) / cast(f64)(1024ull * 1024ull));
+			return cast(i64)p.PeakWorkingSetSize;
+		}
+	#endif
+	}
+	return 0;
+}
+
+
 gb_global BlockingMutex debugf_mutex;
 
 gb_internal void debugf(char const *fmt, ...) {
@@ -634,6 +649,7 @@ enum BuildFlagKind {
 	BuildFlag_Microarch,
 	BuildFlag_TargetFeatures,
 	BuildFlag_MinimumOSVersion,
+	BuildFlag_NoThreadLocal,
 
 	BuildFlag_RelocMode,
 	BuildFlag_DisableRedZone,
@@ -794,6 +810,7 @@ gb_internal bool parse_build_flags(Array<String> args) {
 	add_flag(&build_flags, BuildFlag_Debug,                   str_lit("debug"),                     BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_DisableAssert,           str_lit("disable-assert"),            BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_NoBoundsCheck,           str_lit("no-bounds-check"),           BuildFlagParam_None,    Command__does_check);
+	add_flag(&build_flags, BuildFlag_NoThreadLocal,           str_lit("no-thread-local"),           BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_NoDynamicLiterals,       str_lit("no-dynamic-literals"),       BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_NoCRT,                   str_lit("no-crt"),                    BuildFlagParam_None,    Command__does_build);
 	add_flag(&build_flags, BuildFlag_NoEntryPoint,            str_lit("no-entry-point"),            BuildFlagParam_None,    Command__does_check &~ Command_test);
@@ -1312,6 +1329,9 @@ gb_internal bool parse_build_flags(Array<String> args) {
 						case BuildFlag_NoEntryPoint:
 							build_context.no_entry_point = true;
 							break;
+						case BuildFlag_NoThreadLocal:
+							build_context.no_thread_local = true;
+							break;
 						case BuildFlag_UseLLD:
 							build_context.use_lld = true;
 							break;
@@ -1726,15 +1746,7 @@ gb_internal void show_timings(Checker *c, Timings *t) {
 
 	timings_print_all(t);
 
-	if (build_context.show_more_timings) {
-	#if defined(GB_SYSTEM_WINDOWS)
-		PROCESS_MEMORY_COUNTERS p = {sizeof(p)};
-		if (GetProcessMemoryInfo(GetCurrentProcess(), &p, sizeof(p))) {
-			gb_printf("\n");
-			gb_printf("Peak Memory Size: %.3f MiB\n", (cast(f64)p.PeakWorkingSetSize) / cast(f64)(1024ull * 1024ull));
-		}
-	#endif
-	}
+	PRINT_PEAK_USAGE();
 
 	if (!(build_context.export_timings_format == TimingsExportUnspecified)) {
 		timings_export_all(t, c, true);
@@ -2062,6 +2074,10 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 
 		print_usage_line(1, "-no-crt");
 		print_usage_line(2, "Disables automatic linking with the C Run Time");
+		print_usage_line(0, "");
+
+		print_usage_line(1, "-no-thread-local");
+		print_usage_line(2, "Ignore @thread_local attribute, effectively treating the program as if it is single-threaded");
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-lld");

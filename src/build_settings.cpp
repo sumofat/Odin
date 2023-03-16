@@ -275,6 +275,7 @@ struct BuildContext {
 	bool   no_output_files;
 	bool   no_crt;
 	bool   no_entry_point;
+	bool   no_thread_local;
 	bool   use_lld;
 	bool   vet;
 	bool   vet_extra;
@@ -1369,6 +1370,7 @@ gb_internal char const *target_features_set_to_cstring(gbAllocator allocator, bo
 		gb_memmove(features + len, feature.text, feature.len);
 		len += feature.len;
 		if (with_quotes) features[len++] = '"';
+		i += 1;
 	}
 	features[len++] = 0;
 
