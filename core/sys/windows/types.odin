@@ -2033,6 +2033,16 @@ FILE_TYPE_PIPE :: 0x0003
 RECT  :: struct {left, top, right, bottom: LONG}
 POINT :: struct {x, y: LONG}
 
+WINDOWPLACEMENT :: struct{
+  length : UINT,
+  flags : UINT,
+  showCmd : UINT,
+  ptMinPosition : POINT,
+   ptMaxPosition : POINT,
+  rcNormalPosition : RECT,
+    rcDevice : RECT,
+} 
+
 WINDOWPOS :: struct {
 	hwnd: HWND,
 	hwndInsertAfter: HWND,
