@@ -7,6 +7,8 @@
 // #define DEFAULT_TO_THREADED_CHECKER
 // #endif
 
+#define DEFAULT_MAX_ERROR_COLLECTOR_COUNT (36)
+
 enum TargetOsKind : u16 {
 	TargetOs_Invalid,
 
@@ -260,6 +262,7 @@ struct BuildContext {
 	String microarch;
 	BuildModeKind build_mode;
 	bool   generate_docs;
+	bool   custom_optimization_level;
 	i32    optimization_level;
 	bool   show_timings;
 	TimingsExportFormat export_timings_format;
@@ -313,6 +316,8 @@ struct BuildContext {
 	RelocMode reloc_mode;
 	bool   disable_red_zone;
 
+	isize max_error_count;
+
 
 	u32 cmd_doc_flags;
 	Array<String> extra_packages;
@@ -343,6 +348,14 @@ gb_internal bool global_warnings_as_errors(void) {
 gb_internal bool global_ignore_warnings(void) {
 	return build_context.ignore_warnings;
 }
+
+gb_internal isize MAX_ERROR_COLLECTOR_COUNT(void) {
+	if (build_context.max_error_count <= 0) {
+		return DEFAULT_MAX_ERROR_COLLECTOR_COUNT;
+	}
+	return build_context.max_error_count;
+}
+
 
 
 gb_global TargetMetrics target_windows_i386 = {
@@ -1081,6 +1094,10 @@ gb_internal void init_build_context(TargetMetrics *cross_target) {
 	bc->ODIN_VERSION = ODIN_VERSION;
 	bc->ODIN_ROOT    = odin_root_dir();
 
+	if (bc->max_error_count <= 0) {
+		bc->max_error_count = DEFAULT_MAX_ERROR_COLLECTOR_COUNT;
+	}
+
 	{
 		char const *found = gb_get_env("ODIN_ERROR_POS_STYLE", permanent_allocator());
 		if (found) {
@@ -1256,6 +1273,12 @@ gb_internal void init_build_context(TargetMetrics *cross_target) {
 		gb_exit(1);
 	}
 
+	if (bc->ODIN_DEBUG && !bc->custom_optimization_level) {
+		// NOTE(bill): when building with `-debug` but not specifying an optimization level
+		// default to `-o:none` to improve the debug symbol generation by default
+		bc->optimization_level = -1; // -o:none
+	}
+
 	bc->optimization_level = gb_clamp(bc->optimization_level, -1, 2);
 
 	// ENFORCE DYNAMIC MAP CALLS
@@ -1269,9 +1292,6 @@ gb_internal void init_build_context(TargetMetrics *cross_target) {
 			break;
 		}
 	}
-
-	#undef LINK_FLAG_X64
-	#undef LINK_FLAG_386
 }
 
 #if defined(GB_SYSTEM_WINDOWS)

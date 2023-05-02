@@ -38,6 +38,7 @@ foreign user32 {
 	DestroyWindow :: proc(hWnd: HWND) -> BOOL ---
 
 	ShowWindow :: proc(hWnd: HWND, nCmdShow: c_int) -> BOOL ---
+	IsWindow :: proc(hWnd: HWND) -> BOOL ---
 	BringWindowToTop :: proc(hWnd: HWND) -> BOOL ---
 	GetTopWindow :: proc(hWnd: HWND) -> HWND ---
 	SetForegroundWindow :: proc(hWnd: HWND) -> BOOL ---
@@ -212,7 +213,7 @@ foreign user32 {
 	GetRegisteredRawInputDevices :: proc(pRawInputDevices: PRAWINPUTDEVICE, puiNumDevices: PUINT, cbSize: UINT) -> UINT ---
 	RegisterRawInputDevices :: proc(pRawInputDevices: PCRAWINPUTDEVICE, uiNumDevices: UINT, cbSize: UINT) -> BOOL ---
 
-	SendInput :: proc(cInputs: UINT, pInputs: [^]INPUT, cbSize: ^c_int) -> UINT ---
+	SendInput :: proc(cInputs: UINT, pInputs: [^]INPUT, cbSize: c_int) -> UINT ---
 
 	SetLayeredWindowAttributes  :: proc(hWnd: HWND, crKey: COLORREF, bAlpha: BYTE, dwFlags: DWORD) -> BOOL ---
 

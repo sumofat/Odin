@@ -457,7 +457,7 @@ opt_write_start :: proc(w: io.Writer, opt: ^Marshal_Options, c: byte) -> (err: i
 	return
 }
 
-// insert comma seperation and write indentations
+// insert comma separation and write indentations
 opt_write_iteration :: proc(w: io.Writer, opt: ^Marshal_Options, iteration: int) -> (err: io.Error) {
 	switch opt.spec {
 	case .JSON, .JSON5: 
@@ -477,7 +477,7 @@ opt_write_iteration :: proc(w: io.Writer, opt: ^Marshal_Options, iteration: int)
 			if opt.pretty {
 				io.write_byte(w, '\n') or_return
 			} else {
-				// comma seperation necessary for non pretty output!
+				// comma separation necessary for non pretty output!
 				io.write_string(w, ", ") or_return
 			}
 		}
