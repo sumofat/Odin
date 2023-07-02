@@ -7,18 +7,19 @@ on:
 
 jobs:
   build_windows:
-    runs-on: windows-2019
+    if: github.repository == 'odin-lang/Odin'
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v1
       - name: build Odin
         shell: cmd
         run: |
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat
           ./build.bat 1 1
       - name: Odin run
         shell: cmd
         run: |
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat
           odin run examples/demo
       - name: Copy artifacts
         run: |
@@ -37,6 +38,7 @@ jobs:
           name: windows_artifacts
           path: dist
   build_ubuntu:
+    if: github.repository == 'odin-lang/Odin'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
@@ -61,6 +63,7 @@ jobs:
           name: ubuntu_artifacts
           path: dist
   build_macos:
+    if: github.repository == 'odin-lang/Odin'
     runs-on: macOS-latest
     steps:
       - uses: actions/checkout@v1

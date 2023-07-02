@@ -356,6 +356,20 @@ enum UnionTypeKind : u8 {
 	UnionType_Normal     = 0,
 	UnionType_no_nil     = 2,
 	UnionType_shared_nil = 3,
+
+	UnionType_COUNT
+};
+
+gb_global char const *union_type_kind_strings[UnionType_COUNT] = {
+	"(normal)",
+	"#maybe",
+	"#no_nil",
+	"#shared_nil",
+};
+
+struct AstSplitArgs {
+	Slice<Ast *> positional;
+	Slice<Ast *> named;
 };
 
 #define AST_KINDS \
@@ -364,7 +378,7 @@ enum UnionTypeKind : u8 {
 		Entity *entity; \
 	}) \
 	AST_KIND(Implicit,       "implicit",        Token) \
-	AST_KIND(Undef,          "undef",           Token) \
+	AST_KIND(Uninit,         "uninitialized value", Token) \
 	AST_KIND(BasicLit,       "basic literal",   struct { \
 		Token token; \
 	}) \
@@ -433,6 +447,7 @@ AST_KIND(_ExprBegin,  "",  bool) \
 		ProcInlining inlining; \
 		bool         optional_ok_one; \
 		bool         was_selector; \
+		AstSplitArgs *split_args; \
 	}) \
 	AST_KIND(FieldValue,      "field value",              struct { Token eq; Ast *field, *value; }) \
 	AST_KIND(EnumFieldValue,  "enum field value",         struct { \
@@ -520,6 +535,7 @@ AST_KIND(_ComplexStmtBegin, "", bool) \
 		Token in_token; \
 		Ast *expr; \
 		Ast *body; \
+		bool reverse; \
 	}) \
 	AST_KIND(UnrollRangeStmt, "#unroll range statement", struct { \
 		Scope *scope; \
