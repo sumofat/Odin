@@ -8,8 +8,9 @@ struct ErrorCollector {
 	BlockingMutex     string_mutex;
 	RecursiveMutex    block_mutex;
 
-	Array<u8> error_buffer;
-	Array<String> errors;
+	RecursiveMutex error_buffer_mutex;
+	Array<u8>      error_buffer;
+	Array<String>  errors;
 };
 
 gb_global ErrorCollector global_error_collector;
@@ -119,6 +120,7 @@ gb_internal void begin_error_block(void) {
 }
 
 gb_internal void end_error_block(void) {
+	mutex_lock(&global_error_collector.error_buffer_mutex);
 	isize n = global_error_collector.error_buffer.count;
 	if (n > 0) {
 		u8 *text = global_error_collector.error_buffer.data;
@@ -150,11 +152,16 @@ gb_internal void end_error_block(void) {
 		text = gb_alloc_array(permanent_allocator(), u8, n+1);
 		gb_memmove(text, global_error_collector.error_buffer.data, n);
 		text[n] = 0;
+
+
+		mutex_lock(&global_error_collector.error_out_mutex);
 		String s = {text, n};
 		array_add(&global_error_collector.errors, s);
+		mutex_unlock(&global_error_collector.error_out_mutex);
+
 		global_error_collector.error_buffer.count = 0;
 	}
-
+	mutex_unlock(&global_error_collector.error_buffer_mutex);
 	global_error_collector.in_block.store(false);
 	mutex_unlock(&global_error_collector.block_mutex);
 }
@@ -172,11 +179,15 @@ gb_internal ERROR_OUT_PROC(default_error_out_va) {
 	isize len = gb_snprintf_va(buf, gb_size_of(buf), fmt, va);
 	isize n = len-1;
 	if (global_error_collector.in_block) {
+		mutex_lock(&global_error_collector.error_buffer_mutex);
+
 		isize cap = global_error_collector.error_buffer.count + n;
 		array_reserve(&global_error_collector.error_buffer, cap);
 		u8 *data = global_error_collector.error_buffer.data + global_error_collector.error_buffer.count;
 		gb_memmove(data, buf, n);
 		global_error_collector.error_buffer.count += n;
+
+		mutex_unlock(&global_error_collector.error_buffer_mutex);
 	} else {
 		mutex_lock(&global_error_collector.error_out_mutex);
 		{
@@ -254,7 +265,8 @@ gb_internal bool show_error_on_line(TokenPos const &pos, TokenPos end) {
 	defer (gb_string_free(the_line));
 
 	if (the_line != nullptr) {
-		String line = make_string(cast(u8 const *)the_line, gb_string_length(the_line));
+		char const *line_text = the_line;
+		isize line_len = gb_string_length(the_line);
 
 		// TODO(bill): This assumes ASCII
 
@@ -274,21 +286,27 @@ gb_internal bool show_error_on_line(TokenPos const &pos, TokenPos end) {
 
 		isize squiggle_extra = 0;
 
-		if (line.len > MAX_LINE_LENGTH_PADDED) {
+		if (line_len > MAX_LINE_LENGTH_PADDED) {
 			i32 left = MAX_TAB_WIDTH;
-			line.text += offset-left;
-			line.len  -= offset-left;
-			offset = left+MAX_TAB_WIDTH/2;
-			if (line.len > MAX_LINE_LENGTH_PADDED) {
-				line.len = MAX_LINE_LENGTH_PADDED;
-				if (error_length > line.len-left) {
-					error_length = cast(i32)line.len - left;
+			if (offset > 0) {
+				line_text += offset-left;
+				line_len  -= offset-left;
+				offset = left+MAX_TAB_WIDTH/2;
+			}
+			if (line_len > MAX_LINE_LENGTH_PADDED) {
+				line_len = MAX_LINE_LENGTH_PADDED;
+				if (error_length > line_len-left) {
+					error_length = cast(i32)line_len - left;
 					squiggle_extra = 1;
 				}
 			}
-			error_out("... %.*s ...", LIT(line));
+			if (offset > 0) {
+				error_out("... %.*s ...", cast(i32)line_len, line_text);
+			} else {
+				error_out("%.*s ...", cast(i32)line_len, line_text);
+			}
 		} else {
-			error_out("%.*s", LIT(line));
+			error_out("%.*s", cast(i32)line_len, line_text);
 		}
 		error_out("\n\t");
 
@@ -301,7 +319,7 @@ gb_internal bool show_error_on_line(TokenPos const &pos, TokenPos end) {
 		error_out("^");
 		if (end.file_id == pos.file_id) {
 			if (end.line > pos.line) {
-				for (i32 i = offset; i < line.len; i++) {
+				for (i32 i = offset; i < line_len; i++) {
 					error_out("~");
 				}
 			} else if (end.line == pos.line && end.column > pos.column) {

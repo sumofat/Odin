@@ -370,7 +370,7 @@ gb_internal void lb_run_remove_dead_instruction_pass(lbProcedure *p) {
 }
 
 
-gb_internal void lb_run_function_pass_manager(LLVMPassManagerRef fpm, lbProcedure *p) {
+gb_internal void lb_run_function_pass_manager(LLVMPassManagerRef fpm, lbProcedure *p, lbFunctionPassManagerKind pass_manager_kind) {
 	if (p == nullptr) {
 		return;
 	}

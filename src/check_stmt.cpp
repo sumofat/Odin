@@ -239,6 +239,10 @@ gb_internal bool check_is_terminating(Ast *node, String const &label) {
 		return check_is_terminating(unparen_expr(es->expr), label);
 	case_end;
 
+	case_ast_node(bs, BranchStmt, node);
+		return bs->token.kind == Token_fallthrough;
+	case_end;
+
 	case_ast_node(is, IfStmt, node);
 		if (is->else_stmt != nullptr) {
 			if (check_is_terminating(is->body, label) &&
@@ -402,11 +406,18 @@ gb_internal Type *check_assignment_variable(CheckerContext *ctx, Operand *lhs, O
 
 	Type *assignment_type = lhs->type;
 
+	if (rhs->mode == Addressing_Type && is_type_polymorphic(rhs->type)) {
+		gbString t = type_to_string(rhs->type);
+		error(rhs->expr, "Invalid use of a non-specialized polymorphic type '%s'", t);
+		gb_string_free(t);
+	}
+
 	switch (lhs->mode) {
 	case Addressing_Invalid:
 		return nullptr;
 
 	case Addressing_Variable:
+		check_old_for_or_switch_value_usage(lhs->expr);
 		break;
 
 	case Addressing_MapIndex: {
@@ -1131,8 +1142,14 @@ gb_internal void check_type_switch_stmt(CheckerContext *ctx, Ast *node, u32 mod_
 		syntax_error(as_token, "Expected 1 expression after 'in'");
 		return;
 	}
+	bool is_addressed = false;
+
 	Ast *lhs = as->lhs[0];
 	Ast *rhs = as->rhs[0];
+	if (lhs->kind == Ast_UnaryExpr && lhs->UnaryExpr.op.kind == Token_And) {
+		is_addressed = true;
+		lhs = lhs->UnaryExpr.expr;
+	}
 
 	check_expr(ctx, &x, rhs);
 	check_assignment(ctx, &x, nullptr, str_lit("type switch expression"));
@@ -1271,12 +1288,15 @@ gb_internal void check_type_switch_stmt(CheckerContext *ctx, Ast *node, u32 mod_
 			}
 		}
 
-		bool is_reference = false;
+		bool is_reference = is_addressed;
+		bool old_style = false;
 
-		if (is_ptr &&
+		if (!is_reference &&
+		    is_ptr &&
 		    cc->list.count == 1 &&
 		    case_type != nullptr) {
 			is_reference = true;
+			old_style = true;
 		}
 
 		if (cc->list.count > 1 || saw_nil) {
@@ -1295,9 +1315,12 @@ gb_internal void check_type_switch_stmt(CheckerContext *ctx, Ast *node, u32 mod_
 		{
 			Entity *tag_var = alloc_entity_variable(ctx->scope, lhs->Ident.token, case_type, EntityState_Resolved);
 			tag_var->flags |= EntityFlag_Used;
+			tag_var->flags |= EntityFlag_SwitchValue;
 			if (!is_reference) {
 				tag_var->flags |= EntityFlag_Value;
-				tag_var->flags |= EntityFlag_SwitchValue;
+			}
+			if (old_style) {
+				tag_var->flags |= EntityFlag_OldForOrSwitchValue;
 			}
 			add_entity(ctx, ctx->scope, lhs, tag_var);
 			add_entity_use(ctx, lhs, tag_var);
@@ -1455,14 +1478,18 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 	bool is_map = false;
 	bool use_by_reference_for_value = false;
 	bool is_soa = false;
+	bool is_reverse = rs->reverse;
 
 	Ast *expr = unparen_expr(rs->expr);
 
+	bool is_possibly_addressable = true;
 	isize max_val_count = 2;
 	if (is_ast_range(expr)) {
 		ast_node(ie, BinaryExpr, expr);
 		Operand x = {};
 		Operand y = {};
+
+		is_possibly_addressable = false;
 
 		bool ok = check_range(ctx, expr, true, &x, &y, nullptr);
 		if (!ok) {
@@ -1470,6 +1497,10 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 		}
 		array_add(&vals, x.type);
 		array_add(&vals, t_int);
+
+		if (is_reverse) {
+			error(node, "#reverse for is not supported with ranges, prefer an explicit for loop with init, condition, and post arguments");
+		}
 	} else {
 		Operand operand = {Addressing_Invalid};
 		check_expr_base(ctx, &operand, expr, nullptr);
@@ -1482,6 +1513,11 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 				gb_string_free(t);
 				goto skip_expr_range_stmt;
 			} else {
+				is_possibly_addressable = false;
+
+				if (is_reverse) {
+					error(node, "#reverse for is not supported for enum types");
+				}
 				array_add(&vals, operand.type);
 				array_add(&vals, t_int);
 				add_type_info_type(ctx, operand.type);
@@ -1492,10 +1528,15 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 			Type *t = base_type(type_deref(operand.type));
 			switch (t->kind) {
 			case Type_Basic:
-				if (is_type_string(t) && t->Basic.kind != Basic_cstring) {
+				if (t->Basic.kind == Basic_string || t->Basic.kind == Basic_UntypedString) {
+					is_possibly_addressable = false;
 					array_add(&vals, t_rune);
 					array_add(&vals, t_int);
-					add_package_dependency(ctx, "runtime", "string_decode_rune");
+					if (is_reverse) {
+						add_package_dependency(ctx, "runtime", "string_decode_last_rune");
+					} else {
+						add_package_dependency(ctx, "runtime", "string_decode_rune");
+					}
 				}
 				break;
 
@@ -1507,6 +1548,7 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 
 			case Type_Array:
 				if (is_ptr) use_by_reference_for_value = true;
+				if (!is_ptr) is_possibly_addressable = operand.mode == Addressing_Variable;
 				array_add(&vals, t->Array.elem);
 				array_add(&vals, t_int);
 				break;
@@ -1528,6 +1570,9 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 				is_map = true;
 				array_add(&vals, t->Map.key);
 				array_add(&vals, t->Map.value);
+				if (is_reverse) {
+					error(node, "#reverse for is not supported for map types, as maps are unordered");
+				}
 				break;
 
 			case Type_Tuple:
@@ -1550,6 +1595,8 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 						array_add(&vals, e->type);
 					}
 
+					is_possibly_addressable = false;
+
 					if (rs->vals.count > 1 && rs->vals[1] != nullptr && count < 3) {
 						gbString s = type_to_string(t);
 						error(operand.expr, "Expected a 3-valued expression on the rhs, got (%s)", s);
@@ -1564,6 +1611,9 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 						break;
 					}
 
+					if (is_reverse) {
+						error(node, "#reverse for is not supported for multiple return valued parameters");
+					}
 				}
 				break;
 
@@ -1616,8 +1666,13 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 		}
 		Ast * name = lhs[i];
 		Type *type = rhs[i];
-
 		Entity *entity = nullptr;
+
+		bool is_addressed = false;
+		if (name->kind == Ast_UnaryExpr && name->UnaryExpr.op.kind == Token_And) {
+			is_addressed = true;
+			name = name->UnaryExpr.expr;
+		}
 		if (name->kind == Ast_Ident) {
 			Token token = name->Ident.token;
 			String str = token.string;
@@ -1631,7 +1686,17 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 				entity->flags |= EntityFlag_ForValue;
 				entity->flags |= EntityFlag_Value;
 				entity->identifier = name;
-				if (i == addressable_index && use_by_reference_for_value) {
+				entity->Variable.for_loop_parent_type = type_of_expr(expr);
+
+				if (is_addressed) {
+					if (is_possibly_addressable && i == addressable_index) {
+						entity->flags &= ~EntityFlag_Value;
+					} else {
+						char const *idx_name = is_map ? "key" : "index";
+						error(token, "The %s variable '%.*s' cannot be made addressable", idx_name, LIT(str));
+					}
+				} else if (i == addressable_index && use_by_reference_for_value) {
+					entity->flags |= EntityFlag_OldForOrSwitchValue;
 					entity->flags &= ~EntityFlag_Value;
 				}
 				if (is_soa) {
@@ -1650,7 +1715,9 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 				entity = found;
 			}
 		} else {
-			error(name, "A variable declaration must be an identifier");
+			gbString s = expr_to_string(lhs[i]);
+			error(name, "A variable declaration must be an identifier, got %s", s);
+			gb_string_free(s);
 		}
 
 		if (entity == nullptr) {
@@ -2170,7 +2237,7 @@ gb_internal void check_return_stmt(CheckerContext *ctx, Ast *node) {
 	auto operands = array_make<Operand>(heap_allocator(), 0, 2*rs->results.count);
 	defer (array_free(&operands));
 
-	check_unpack_arguments(ctx, result_entities, result_count, &operands, rs->results, true, false);
+	check_unpack_arguments(ctx, result_entities, result_count, &operands, rs->results, UnpackFlag_AllowOk);
 
 	if (result_count == 0 && rs->results.count > 0) {
 		error(rs->results[0], "No return values expected");
@@ -2179,7 +2246,13 @@ gb_internal void check_return_stmt(CheckerContext *ctx, Ast *node) {
 	} else if (operands.count != result_count) {
 		// Ignore error message as it has most likely already been reported
 		if (all_operands_valid(operands)) {
-			error(node, "Expected %td return values, got %td", result_count, operands.count);
+			if (operands.count == 1) {
+				gbString t = type_to_string(operands[0].type);
+				error(node, "Expected %td return values, got %td (%s)", result_count, operands.count, t);
+				gb_string_free(t);
+			} else {
+				error(node, "Expected %td return values, got %td", result_count, operands.count);
+			}
 		}
 	} else {
 		for (isize i = 0; i < result_count; i++) {
