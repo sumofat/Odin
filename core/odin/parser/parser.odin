@@ -1053,9 +1053,7 @@ parse_attribute :: proc(p: ^Parser, tok: tokenizer.Token, open_kind, close_kind:
 			}
 			append(&elems, elem)
 
-			if !allow_token(p, .Comma) {
-				break
-			}
+			allow_token(p, .Comma) or_break
 		}
 		p.expr_level -= 1
 		close = expect_token_after(p, close_kind, "attribute")
@@ -1174,9 +1172,7 @@ parse_foreign_decl :: proc(p: ^Parser) -> ^ast.Decl {
 				path := expect_token(p, .String)
 				append(&fullpaths, path.text)
 
-				if !allow_token(p, .Comma) {
-					break
-				}
+				allow_token(p, .Comma) or_break
 			}
 			expect_token(p, .Close_Brace)
 		} else {
@@ -1431,6 +1427,18 @@ parse_stmt :: proc(p: ^Parser) -> ^ast.Stmt {
 			return es
 		case "unroll":
 			return parse_unrolled_for_loop(p, tag)
+		case "reverse":
+			stmt := parse_for_stmt(p)
+
+			if range, is_range := stmt.derived.(^ast.Range_Stmt); is_range {
+				if range.reverse {
+					error(p, range.pos, "#reverse already applied to a 'for in' statement")
+				}
+				range.reverse = true
+			} else {
+				error(p, range.pos, "#reverse can only be applied to a 'for in' statement")
+			}
+			return stmt
 		case "include":
 			error(p, tag.pos, "#include is not a valid import declaration kind. Did you meant 'import'?")
 			return ast.new(ast.Bad_Stmt, tok.pos, end_pos(tag))
@@ -1654,9 +1662,6 @@ is_token_field_prefix :: proc(p: ^Parser) -> ast.Field_Flag {
 	case .Using:
 		advance_token(p)
 		return .Using
-	case .Auto_Cast:
-		advance_token(p)
-		return .Auto_Cast
 	case .Hash:
 		tok: tokenizer.Token
 		advance_token(p)
@@ -1952,9 +1957,7 @@ parse_field_list :: proc(p: ^Parser, follow: tokenizer.Token_Kind, allowed_flags
 
 		eaf := Expr_And_Flags{param, prefix_flags}
 		append(&list, eaf)
-		if !allow_token(p, .Comma) {
-			break
-		}
+		allow_token(p, .Comma) or_break
 	}
 
 	if p.curr_tok.kind != .Colon {
@@ -2002,10 +2005,7 @@ parse_field_list :: proc(p: ^Parser, follow: tokenizer.Token_Kind, allowed_flags
 			names = parse_ident_list(p, allow_poly_names)
 
 			total_name_count += len(names)
-			ok := handle_field(p, &seen_ellipsis, &fields, docs, names, allowed_flags, set_flags)
-			if !ok {
-				break
-			}
+			handle_field(p, &seen_ellipsis, &fields, docs, names, allowed_flags, set_flags) or_break
 		}
 	}
 
@@ -2141,7 +2141,7 @@ parse_inlining_operand :: proc(p: ^Parser, lhs: bool, tok: tokenizer.Token) -> ^
 		}
 	}
 
-	#partial switch e in ast.unparen_expr(expr).derived_expr {
+	#partial switch e in ast.strip_or_return_expr(expr).derived_expr {
 	case ^ast.Proc_Lit:
 		if e.inlining != .None && e.inlining != pi {
 			error(p, expr.pos, "both 'inline' and 'no_inline' cannot be applied to a procedure literal")
@@ -2352,9 +2352,7 @@ parse_operand :: proc(p: ^Parser, lhs: bool) -> ^ast.Expr {
 				elem := parse_expr(p, false)
 				append(&args, elem)
 
-				if !allow_token(p, .Comma) {
-					break
-				}
+				allow_token(p, .Comma) or_break
 			}
 
 			close := expect_token(p, .Close_Brace)
@@ -2687,9 +2685,7 @@ parse_operand :: proc(p: ^Parser, lhs: bool) -> ^ast.Expr {
 			if _, ok := type.derived.(^ast.Bad_Expr); !ok {
 				append(&variants, type)
 			}
-			if !allow_token(p, .Comma) {
-				break
-			}
+			allow_token(p, .Comma) or_break
 		}
 
 		close := expect_closing_brace_of_field_list(p)
@@ -2907,9 +2903,7 @@ parse_elem_list :: proc(p: ^Parser) -> []^ast.Expr {
 
 		append(&elems, elem)
 
-		if !allow_token(p, .Comma) {
-			break
-		}
+		allow_token(p, .Comma) or_break
 	}
 
 	return elems[:]
@@ -2984,9 +2978,7 @@ parse_call_expr :: proc(p: ^Parser, operand: ^ast.Expr) -> ^ast.Expr {
 			seen_ellipsis = true
 		}
 
-		if !allow_token(p, .Comma) {
-			break
-		}
+		allow_token(p, .Comma) or_break
 	}
 
 	close := expect_token_after(p, .Close_Paren, "argument list")
@@ -3178,6 +3170,23 @@ parse_atom_expr :: proc(p: ^Parser, value: ^ast.Expr, lhs: bool) -> (operand: ^a
 			oe := ast.new(ast.Or_Return_Expr, operand.pos, end_pos(token))
 			oe.expr  = operand
 			oe.token = token
+
+			operand = oe
+
+		case .Or_Break, .Or_Continue:
+			token := advance_token(p)
+			label: ^ast.Ident
+
+			end := end_pos(token)
+			if p.curr_tok.kind == .Ident {
+				end = end_pos(p.curr_tok)
+				label = parse_ident(p)
+			}
+
+			oe := ast.new(ast.Or_Branch_Expr, operand.pos, end)
+			oe.expr  = operand
+			oe.token = token
+			oe.label = label
 
 			operand = oe
 

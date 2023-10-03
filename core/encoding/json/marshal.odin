@@ -281,9 +281,8 @@ marshal_to_writer :: proc(w: io.Writer, v: any, opt: ^Marshal_Options) -> (err: 
 
 			i := 0
 			for bucket_index in 0..<map_cap {
-				if !runtime.map_hash_is_valid(hs[bucket_index]) {
-					continue
-				}
+				runtime.map_hash_is_valid(hs[bucket_index]) or_continue
+
 				opt_write_iteration(w, opt, i) or_return
 				i += 1
 
@@ -300,8 +299,8 @@ marshal_to_writer :: proc(w: io.Writer, v: any, opt: ^Marshal_Options) -> (err: 
 					#partial switch info in ti.variant {
 					case runtime.Type_Info_String:
 						switch s in a {
-							case string: name = s
-							case cstring: name = string(s)
+						case string: name = s
+						case cstring: name = string(s)
 						}
 						opt_write_key(w, opt, name) or_return
 
@@ -420,7 +419,7 @@ opt_write_key :: proc(w: io.Writer, opt: ^Marshal_Options, name: string) -> (err
 	switch opt.spec {
 	case .JSON, .JSON5:
 		io.write_quoted_string(w, name) or_return
-		io.write_string(w, ": ") or_return
+		io.write_string(w, ": " if opt.pretty else ":") or_return
 
 	case .MJSON:
 		if opt.mjson_keys_use_quotes {
@@ -428,11 +427,11 @@ opt_write_key :: proc(w: io.Writer, opt: ^Marshal_Options, name: string) -> (err
 		} else {
 			io.write_string(w, name) or_return
 		}
-		
+
 		if opt.mjson_keys_use_equal_sign {
-			io.write_string(w, " = ") or_return
+			io.write_string(w, " = " if opt.pretty else "=") or_return
 		} else {
-			io.write_string(w, ": ") or_return
+			io.write_string(w, ": " if opt.pretty else ":") or_return
 		}
 	}	
 
@@ -462,7 +461,7 @@ opt_write_iteration :: proc(w: io.Writer, opt: ^Marshal_Options, iteration: int)
 	switch opt.spec {
 	case .JSON, .JSON5: 
 		if iteration > 0 {
-			io.write_string(w, ", ") or_return
+			io.write_byte(w, ',') or_return
 
 			if opt.pretty {
 				io.write_byte(w, '\n') or_return
@@ -478,7 +477,7 @@ opt_write_iteration :: proc(w: io.Writer, opt: ^Marshal_Options, iteration: int)
 				io.write_byte(w, '\n') or_return
 			} else {
 				// comma separation necessary for non pretty output!
-				io.write_string(w, ", ") or_return
+				io.write_byte(w, ',') or_return
 			}
 		}
 
