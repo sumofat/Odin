@@ -109,7 +109,7 @@ remove_range :: proc(array: ^$D/[dynamic]$T, lo, hi: int, loc := #caller_locatio
 
 // `pop` will remove and return the end value of dynamic array `array` and reduces the length of `array` by 1.
 //
-// Note: If the dynamic array as no elements (`len(array) == 0`), this procedure will panic.
+// Note: If the dynamic array has no elements (`len(array) == 0`), this procedure will panic.
 @builtin
 pop :: proc(array: ^$T/[dynamic]$E, loc := #caller_location) -> (res: E) #no_bounds_check {
 	assert(len(array) > 0, loc=loc)
@@ -234,6 +234,8 @@ delete :: proc{
 	delete_dynamic_array,
 	delete_slice,
 	delete_map,
+	delete_soa_slice,
+	delete_soa_dynamic_array,
 }
 
 
@@ -587,11 +589,14 @@ assign_at_elem :: proc(array: ^$T/[dynamic]$E, index: int, arg: E, loc := #calle
 
 @builtin
 assign_at_elems :: proc(array: ^$T/[dynamic]$E, index: int, args: ..E, loc := #caller_location) -> (ok: bool, err: Allocator_Error) #no_bounds_check #optional_allocator_error {
-	if index+len(args) < len(array) {
+	new_size := index + len(arg)
+	if len(args) == 0 {
+		ok = true
+	} else if new_size < len(array) {
 		copy(array[index:], args)
 		ok = true
 	} else {
-		resize(array, index+1+len(args), loc) or_return
+		resize(array, new_size, loc) or_return
 		copy(array[index:], args)
 		ok = true
 	}
@@ -817,7 +822,6 @@ assert :: proc(condition: bool, message := "", loc := #caller_location) {
 }
 
 @builtin
-@(disabled=ODIN_DISABLE_ASSERT)
 panic :: proc(message: string, loc := #caller_location) -> ! {
 	p := context.assertion_failure_proc
 	if p == nil {
@@ -827,7 +831,6 @@ panic :: proc(message: string, loc := #caller_location) -> ! {
 }
 
 @builtin
-@(disabled=ODIN_DISABLE_ASSERT)
 unimplemented :: proc(message := "", loc := #caller_location) -> ! {
 	p := context.assertion_failure_proc
 	if p == nil {

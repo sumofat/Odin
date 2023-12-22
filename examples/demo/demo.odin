@@ -44,7 +44,13 @@ the_basics :: proc() {
 	fmt.println("\n# the basics")
 
 	{ // The Basics
-		fmt.println("Hellope")
+
+		// os.args holds the path to the current executable and any arguments passed to it.
+		if len(os.args) == 1 {
+			fmt.printf("Hellope from %v.\n", os.args[0])
+		} else {
+			fmt.printf("%v, %v! from %v.\n", os.args[1], os.args[2], os.args[0])
+		}
 
 		// Lexical elements and literals
 		// A comment
@@ -535,7 +541,7 @@ struct_type :: proc() {
 		p.x = 1335
 		fmt.println(v)
 
-		// We could write p^.x, however, it is to nice abstract the ability
+		// We could write p^.x, however, it is nice to abstract the ability
 		// to not explicitly dereference the pointer. This is very useful when
 		// refactoring code to use a pointer rather than a value, and vice versa.
 	}

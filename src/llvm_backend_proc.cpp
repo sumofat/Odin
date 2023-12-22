@@ -891,6 +891,9 @@ gb_internal lbValue lb_emit_call_internal(lbProcedure *p, lbValue value, lbValue
 
 		LLVMValueRef ret = LLVMBuildCall2(p->builder, fnp, fn, args, arg_count, "");
 
+		auto llvm_cc = lb_calling_convention_map[proc_type->Proc.calling_convention];
+		LLVMSetInstructionCallConv(ret, llvm_cc);
+
 		LLVMAttributeIndex param_offset = LLVMAttributeIndex_FirstArgIndex;
 		if (return_ptr.value != nullptr) {
 			param_offset += 1;
@@ -2766,7 +2769,7 @@ gb_internal lbValue lb_build_builtin_proc(lbProcedure *p, Ast *expr, TypeAndValu
 				{
 					GB_ASSERT(arg_count <= 7);
 
-					char asm_string_default[] = "int $0x80";
+					char asm_string_default[] = "int $$0x80";
 					char *asm_string = asm_string_default;
 					gbString constraints = gb_string_make(heap_allocator(), "={eax}");
 

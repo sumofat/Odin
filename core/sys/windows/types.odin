@@ -75,6 +75,8 @@ LPRECT :: ^RECT
 LPPOINT :: ^POINT
 LSTATUS :: LONG
 PHKEY :: ^HKEY
+PUSHORT :: ^USHORT
+PCHAR :: ^CHAR
 
 UINT8  ::  u8
 UINT16 :: u16
@@ -86,6 +88,8 @@ INT16 :: i16
 INT32 :: i32
 INT64 :: i64
 
+ULONG32 :: u32
+LONG32  :: i32
 
 ULONG64 :: u64
 LONG64  :: i64
@@ -1967,6 +1971,16 @@ BITMAPINFOHEADER :: struct {
 BITMAPINFO :: struct {
 	bmiHeader: BITMAPINFOHEADER,
 	bmiColors: [1]RGBQUAD,
+}
+
+BITMAP :: struct {
+	bmType:       LONG,
+	bmWidth:      LONG,
+	bmHeight:     LONG,
+	bmWidthBytes: LONG,
+	bmPlanes:     WORD,
+	bmBitsPixel:  WORD,
+	bmBits:       LPVOID,
 }
 
 // pixel types

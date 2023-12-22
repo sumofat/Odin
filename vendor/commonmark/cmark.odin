@@ -10,13 +10,20 @@ import "core:c"
 import "core:c/libc"
 import "core:runtime"
 
+COMMONMARK_SHARED :: #config(COMMONMARK_SHARED, false)
 BINDING_VERSION :: Version_Info{major = 0, minor = 30, patch = 2}
+
+when COMMONMARK_SHARED {
+	#panic("Shared linking for vendor:commonmark is not supported yet")
+}
 
 when ODIN_OS == .Windows {
 	foreign import lib {
 		"cmark_static.lib",
 	}
 } else when ODIN_OS == .Linux {
+	foreign import lib "system:cmark"
+} else when ODIN_OS == .Darwin {
 	foreign import lib "system:cmark"
 }
 

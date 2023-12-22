@@ -962,8 +962,12 @@ gb_internal bool lb_is_type_proc_recursive(Type *t) {
 
 gb_internal void lb_emit_store(lbProcedure *p, lbValue ptr, lbValue value) {
 	GB_ASSERT(value.value != nullptr);
-	Type *a = type_deref(ptr.type);
 
+	if (LLVMIsUndef(value.value)) {
+		return;
+	}
+
+	Type *a = type_deref(ptr.type);
 	if (LLVMIsNull(value.value)) {
 		LLVMTypeRef src_t = llvm_addr_type(p->module, ptr);
 		if (is_type_proc(a)) {
@@ -1328,6 +1332,8 @@ gb_internal void lb_emit_store_union_variant(lbProcedure *p, lbValue parent, lbV
 	Type *pt = base_type(type_deref(parent.type));
 	GB_ASSERT(pt->kind == Type_Union);
 	if (pt->Union.kind == UnionType_shared_nil) {
+		GB_ASSERT(type_size_of(variant_type));
+
 		lbBlock *if_nil     = lb_create_block(p, "shared_nil.if_nil");
 		lbBlock *if_not_nil = lb_create_block(p, "shared_nil.if_not_nil");
 		lbBlock *done       = lb_create_block(p, "shared_nil.done");
@@ -1349,9 +1355,13 @@ gb_internal void lb_emit_store_union_variant(lbProcedure *p, lbValue parent, lbV
 
 
 	} else {
-		lbValue underlying = lb_emit_conv(p, parent, alloc_type_pointer(variant_type));
-
-		lb_emit_store(p, underlying, variant);
+		if (type_size_of(variant_type) == 0) {
+			unsigned alignment = 1;
+			lb_mem_zero_ptr_internal(p, parent.value, pt->Union.variant_block_size, alignment, false);
+		} else {
+			lbValue underlying = lb_emit_conv(p, parent, alloc_type_pointer(variant_type));
+			lb_emit_store(p, underlying, variant);
+		}
 		lb_emit_store_union_variant_tag(p, parent, variant_type);
 	}
 }

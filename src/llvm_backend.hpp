@@ -15,6 +15,9 @@
 #include <llvm-c/Object.h>
 #include <llvm-c/BitWriter.h>
 #include <llvm-c/DebugInfo.h>
+#if LLVM_VERSION_MAJOR >= 17
+#include <llvm-c/Transforms/PassBuilder.h>
+#else
 #include <llvm-c/Transforms/AggressiveInstCombine.h>
 #include <llvm-c/Transforms/InstCombine.h>
 #include <llvm-c/Transforms/IPO.h>
@@ -22,6 +25,7 @@
 #include <llvm-c/Transforms/Scalar.h>
 #include <llvm-c/Transforms/Utils.h>
 #include <llvm-c/Transforms/Vectorize.h>
+#endif
 #endif
 
 #if LLVM_VERSION_MAJOR < 11
@@ -335,6 +339,8 @@ struct lbProcedure {
 	bool             in_multi_assignment;
 	Array<LLVMValueRef> raw_input_parameters;
 
+	LLVMValueRef temp_callee_return_struct_memory;
+
 	Ast *curr_stmt;
 
 	Array<Scope *>       scope_stack;
@@ -546,6 +552,7 @@ gb_internal LLVMValueRef lb_call_intrinsic(lbProcedure *p, const char *name, LLV
 gb_internal void lb_mem_copy_overlapping(lbProcedure *p, lbValue dst, lbValue src, lbValue len, bool is_volatile=false);
 gb_internal void lb_mem_copy_non_overlapping(lbProcedure *p, lbValue dst, lbValue src, lbValue len, bool is_volatile=false);
 gb_internal LLVMValueRef lb_mem_zero_ptr_internal(lbProcedure *p, LLVMValueRef ptr, LLVMValueRef len, unsigned alignment, bool is_volatile);
+gb_internal LLVMValueRef lb_mem_zero_ptr_internal(lbProcedure *p, LLVMValueRef ptr, usize len, unsigned alignment, bool is_volatile);
 
 gb_internal gb_inline i64 lb_max_zero_init_size(void) {
 	return cast(i64)(4*build_context.int_size);

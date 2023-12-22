@@ -120,9 +120,9 @@ register_user_formatter :: proc(id: typeid, formatter: User_Formatter) -> Regist
 //
 // 	Returns: A formatted string. 
 //
-aprint :: proc(args: ..any, sep := " ") -> string {
+aprint :: proc(args: ..any, sep := " ", allocator := context.allocator) -> string {
 	str: strings.Builder
-	strings.builder_init(&str)
+	strings.builder_init(&str, allocator)
 	sbprint(&str, ..args, sep=sep)
 	return strings.to_string(str)
 }
@@ -136,9 +136,9 @@ aprint :: proc(args: ..any, sep := " ") -> string {
 //
 // 	Returns: A formatted string with a newline character at the end.
 //
-aprintln :: proc(args: ..any, sep := " ") -> string {
+aprintln :: proc(args: ..any, sep := " ", allocator := context.allocator) -> string {
 	str: strings.Builder
-	strings.builder_init(&str)
+	strings.builder_init(&str, allocator)
 	sbprintln(&str, ..args, sep=sep)
 	return strings.to_string(str)
 }
@@ -1232,8 +1232,12 @@ _pad :: proc(fi: ^Info, s: string) {
 //
 // NOTE: Can return "NaN", "+Inf", "-Inf", "+<value>", or "-<value>".
 //
-_fmt_float_as :: proc(fi: ^Info, v: f64, bit_size: int, verb: rune, float_fmt: byte) {
-	prec := fi.prec if fi.prec_set else 3
+_fmt_float_as :: proc(fi: ^Info, v: f64, bit_size: int, verb: rune, float_fmt: byte, prec: int) {
+	prec := prec
+	if fi.prec_set {
+		prec = fi.prec
+	}
+
 	buf: [386]byte
 
 	// Can return "NaN", "+Inf", "-Inf", "+<value>", "-<value>".
@@ -1242,7 +1246,7 @@ _fmt_float_as :: proc(fi: ^Info, v: f64, bit_size: int, verb: rune, float_fmt: b
 	if !fi.plus {
 		// Strip sign from "+<value>" but not "+Inf".
 		if str[0] == '+' && str[1] != 'I' {
-			str = str[1:] 
+			str = str[1:]
 		}
 	}
 
@@ -1258,11 +1262,13 @@ _fmt_float_as :: proc(fi: ^Info, v: f64, bit_size: int, verb: rune, float_fmt: b
 //
 fmt_float :: proc(fi: ^Info, v: f64, bit_size: int, verb: rune) {
 	switch verb {
-	case 'f', 'F', 'g', 'G', 'v':
-		_fmt_float_as(fi, v, bit_size, verb, 'f')
+	case 'g', 'G', 'v':
+		_fmt_float_as(fi, v, bit_size, verb, 'g', -1)
+	case 'f', 'F':
+		_fmt_float_as(fi, v, bit_size, verb, 'f', 3)
 	case 'e', 'E':
 		// BUG(): "%.3e" returns "3.000e+00"
-		_fmt_float_as(fi, v, bit_size, verb, 'e')
+		_fmt_float_as(fi, v, bit_size, verb, 'e', 6)
 
 	case 'h', 'H':
 		prev_fi := fi^
@@ -1534,8 +1540,9 @@ stored_enum_value_to_string :: proc(enum_type: ^runtime.Type_Info, ev: runtime.T
 // - fi: A pointer to the Info structure where the formatted bit set will be written.
 // - v: The bit set value to be formatted.
 // - name: An optional string for the name of the bit set (default is an empty string).
+// - verb: An optional verb to adjust format.
 //
-fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "") {
+fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "", verb: rune = 'v') {
 	is_bit_set_different_endian_to_platform :: proc(ti: ^runtime.Type_Info) -> bool {
 		if ti == nil {
 			return false
@@ -1559,7 +1566,7 @@ fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "") {
 	case runtime.Type_Info_Named:
 		val := v
 		val.id = info.base.id
-		fmt_bit_set(fi, val, info.name)
+		fmt_bit_set(fi, val, info.name, verb)
 
 	case runtime.Type_Info_Bit_Set:
 		bits: u128
@@ -1567,26 +1574,52 @@ fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "") {
 
 		do_byte_swap := is_bit_set_different_endian_to_platform(info.underlying)
 
+		as_arg := verb == 'b' || verb == 'o' || verb == 'd' || verb == 'i' || verb == 'z' || verb == 'x' || verb == 'X'
+		if as_arg && !fi.width_set {
+			fi.width_set = true
+			fi.width = int(bit_size)
+		}
+
 		switch bit_size {
 		case  0: bits = 0
 		case  8:
 			x := (^u8)(v.data)^
+			if as_arg {
+				fmt_arg(fi, x, verb)
+				return
+			}
 			bits = u128(x)
 		case 16:
 			x := (^u16)(v.data)^
 			if do_byte_swap { x = byte_swap(x) }
+			if as_arg {
+				fmt_arg(fi, x, verb)
+				return
+			}
 			bits = u128(x)
 		case 32:
 			x := (^u32)(v.data)^
 			if do_byte_swap { x = byte_swap(x) }
+			if as_arg {
+				fmt_arg(fi, x, verb)
+				return
+			}
 			bits = u128(x)
 		case 64:
 			x := (^u64)(v.data)^
 			if do_byte_swap { x = byte_swap(x) }
+			if as_arg {
+				fmt_arg(fi, x, verb)
+				return
+			}
 			bits = u128(x)
 		case 128:
 			x := (^u128)(v.data)^
 			if do_byte_swap { x = byte_swap(x) }
+			if as_arg {
+				fmt_arg(fi, x, verb)
+				return
+			}
 			bits = x
 		case: panic("unknown bit_size size")
 		}
@@ -1628,6 +1661,7 @@ fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "") {
 		}
 	}
 }
+
 // Writes the specified number of indents to the provided Info structure
 //
 // Inputs:
@@ -2173,7 +2207,7 @@ fmt_named :: proc(fi: ^Info, v: any, verb: rune, info: runtime.Type_Info_Named) 
 	case runtime.Type_Info_Struct:
 		fmt_struct(fi, v, verb, b, info.name)
 	case runtime.Type_Info_Bit_Set:
-		fmt_bit_set(fi, v)
+		fmt_bit_set(fi, v, verb = verb)
 	case:
 		fmt_value(fi, any{v.data, info.base.id}, verb)
 	}
@@ -2594,7 +2628,7 @@ fmt_value :: proc(fi: ^Info, v: any, verb: rune) {
 		reflect.write_typeid(fi.writer, id, &fi.n)
 
 	case runtime.Type_Info_Bit_Set:
-		fmt_bit_set(fi, v)
+		fmt_bit_set(fi, v, verb = verb)
 
 	case runtime.Type_Info_Relative_Pointer:
 		ptr := reflect.relative_pointer_to_absolute_raw(v.data, info.base_integer.id)
