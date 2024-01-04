@@ -348,7 +348,7 @@ make_multi_pointer :: proc($T: typeid/[^]$E, #any_int len: int, allocator := con
 //
 // Similar to `new`, the first argument is a type, not a value. Unlike new, make's return type is the same as the
 // type of its argument, not a pointer to it.
-// Make uses the specified allocator, default is context.allocator, default is context.allocator
+// Make uses the specified allocator, default is context.allocator.
 @builtin
 make :: proc{
 	make_slice,
@@ -589,7 +589,7 @@ assign_at_elem :: proc(array: ^$T/[dynamic]$E, index: int, arg: E, loc := #calle
 
 @builtin
 assign_at_elems :: proc(array: ^$T/[dynamic]$E, index: int, args: ..E, loc := #caller_location) -> (ok: bool, err: Allocator_Error) #no_bounds_check #optional_allocator_error {
-	new_size := index + len(arg)
+	new_size := index + len(args)
 	if len(args) == 0 {
 		ok = true
 	} else if new_size < len(array) {
